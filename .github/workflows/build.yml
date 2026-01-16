@@ -48,7 +48,7 @@ jobs:
     needs: [check]
     if: ${{ needs.check.outputs.should_build == 'true' }}
     strategy:
-      fail-fast: false # TODO: enable fail-fast
+      fail-fast: false
       matrix:
         platform:
           # - runner: macos-latest
@@ -79,26 +79,15 @@ jobs:
         run: |
           # Install vcpkg
           git clone https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
+          "$VCPKG_ROOT/bootstrap-vcpkg.bat"
 
-          # Bootstrap vcpkg (use .bat on Windows, .sh on Unix)
-          if [ -f "$VCPKG_ROOT/bootstrap-vcpkg.bat" ]; then
-            "$VCPKG_ROOT/bootstrap-vcpkg.bat"
-          else
-            "$VCPKG_ROOT/bootstrap-vcpkg.sh"
-          fi
+          VCPKG_CMD="$VCPKG_ROOT/vcpkg.exe"
 
           # Determine triplet based on target architecture
           if [ "${{ matrix.platform.target }}" == "windows-arm64" ]; then
             VCPKG_TRIPLET="arm64-windows"
           else
             VCPKG_TRIPLET="x64-windows"
-          fi
-
-          # Determine vcpkg executable name (Windows uses .exe, Unix doesn't)
-          if [ -f "$VCPKG_ROOT/vcpkg.exe" ]; then
-            VCPKG_CMD="$VCPKG_ROOT/vcpkg.exe"
-          else
-            VCPKG_CMD="$VCPKG_ROOT/vcpkg"
           fi
 
           # Install compression libraries with the correct triplet
@@ -108,6 +97,17 @@ jobs:
           echo "Checking vcpkg installation..."
           echo "VCPKG_ROOT: $VCPKG_ROOT"
           echo "VCPKG_TRIPLET: $VCPKG_TRIPLET"
+          echo "Listing $VCPKG_ROOT/vcpkg_installed"
+          ls -la "$VCPKG_ROOT/vcpkg_installed"
+
+          if [ -d "$VCPKG_ROOT/vcpkg_installed/$VCPKG_TRIPLET" ]; then
+            echo "vcpkg_installed/$VCPKG_TRIPLET exists"
+            echo "Contents:"
+            ls -la "$VCPKG_ROOT/vcpkg_installed/$VCPKG_TRIPLET/" || true
+          else
+            echo "vcpkg_installed/$VCPKG_TRIPLET does not exist"
+          fi
+
           if [ -d "$VCPKG_ROOT/vcpkg_installed/$VCPKG_TRIPLET/include" ]; then
             echo "vcpkg_installed/$VCPKG_TRIPLET/include exists"
             echo "Contents:"
@@ -116,6 +116,8 @@ jobs:
               echo "snappy include directory exists:"
               find "$VCPKG_ROOT/vcpkg_installed/$VCPKG_TRIPLET/include/snappy" -name "*.h" -o -name "*.hpp" | head -20
             fi
+          else
+            echo "vcpkg_installed/$VCPKG_TRIPLET/include does not exist"
           fi
 
           # Find snappy include directory in vcpkg buildtrees and add to include path
@@ -128,6 +130,7 @@ jobs:
               SNAPPY_BUILDTREE_INCLUDE="$VCPKG_ROOT/buildtrees/snappy"
             fi
             echo "Found snappy buildtree include directory: $SNAPPY_BUILDTREE_INCLUDE"
+            ls -la "$SNAPPY_BUILDTREE_INCLUDE/"
           else
             echo "Warning: snappy buildtree directory not found"
           fi
