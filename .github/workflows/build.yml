@@ -48,42 +48,46 @@ jobs:
     needs: [check]
     if: ${{ needs.check.outputs.should_build == 'true' }}
     strategy:
-      fail-fast: false
+      fail-fast: false # TODO: enable fail-fast
       matrix:
         platform:
-          - runner: macos-latest
-            target: arm64-osx
-          - runner: macos-latest
-            target: x64-osx
+          # - runner: macos-latest
+          #   target: darwin-arm64
+          # - runner: macos-latest
+          #   target: darwin-x64
           - runner: ubuntu-22.04
-            target: x64-linux
-          - runner: ubuntu-24.04-arm
-            target: arm64-linux
+            target: linux-x64-glibc
+          - runner: ubuntu-latest
+            target: linux-x64-musl
+            use_musl: true
+          - runner: ubuntu-22.04-arm
+            target: linux-arm64-glibc
+          - runner: ubuntu-22.04-arm
+            target: linux-arm64-musl
+            use_musl: true
           # - runner: windows-latest
-          #   target: x64-windows
+          #   target: windows-x64
           # - runner: windows-latest
-          #   target: arm64-windows
+          #   target: windows-arm64
     runs-on: ${{ matrix.platform.runner }}
     env:
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
     steps:
-      - name: Install vcpkg
+      - name: Build RocksDB
+        if: ${{ !matrix.platform.use_musl }}
+        env:
+          VCPKG_ROOT: ${{ github.workspace }}/vcpkg
         shell: bash
         run: |
+          # Install vcpkg
           git clone https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
           $VCPKG_ROOT/bootstrap-vcpkg.sh
           $VCPKG_ROOT/vcpkg integrate install
 
-      - name: Install compression libraries
-        shell: bash
-        run: |
-          # install snappy, lz4, zlib, zstd
+          # Install compression libraries
           $VCPKG_ROOT/vcpkg install snappy lz4 zlib zstd
 
-      - name: Download and build RocksDB
-        id: build
-        shell: bash
-        run: |
+          # Download RocksDB
           URL="https://github.com/facebook/rocksdb/archive/refs/tags/v${{ needs.check.outputs.version }}.tar.gz"
           echo "Downloading: $URL"
           curl -L -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -o rocksdb.tar.gz "$URL"
@@ -118,17 +122,75 @@ jobs:
           [ -f build/rocksdb.lib ] && cp build/rocksdb.lib dist/lib/
           [ -f build/rocksdbd.lib ] && cp build/rocksdbd.lib dist/lib/
 
+      - name: Build RocksDB (musl)
+        if: ${{ matrix.platform.use_musl }}
+        shell: bash
+        run: |
+          # Download RocksDB
+          URL="https://github.com/facebook/rocksdb/archive/refs/tags/v${{ needs.check.outputs.version }}.tar.gz"
+          echo "Downloading: $URL"
+          curl -L -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -o rocksdb.tar.gz "$URL"
+
+          # Build inside Alpine Docker container (musl)
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" \
+            -w /workspace \
+            alpine:latest \
+            sh -c "
+              apk add --no-cache \
+                build-base \
+                cmake \
+                git \
+                curl \
+                zlib-dev \
+                snappy-dev \
+                lz4-dev \
+                zstd-dev \
+                xz
+
+              tar -xzf rocksdb.tar.gz
+              cd rocksdb-${{ needs.check.outputs.version }}
+              mkdir build
+              cd build
+              echo 'Building RocksDB with musl...'
+              cmake .. \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DPORTABLE=ON \
+                -DWITH_SNAPPY=ON \
+                -DWITH_LZ4=ON \
+                -DWITH_ZLIB=ON \
+                -DWITH_ZSTD=ON \
+                -DROCKSDB_BUILD_SHARED=OFF \
+                -DWITH_GFLAGS=OFF
+              cmake --build . --config Release
+              cd ../..
+
+              echo 'Copying files to dist...'
+              mkdir -p dist/include dist/lib
+              mv rocksdb-${{ needs.check.outputs.version }}/include/rocksdb dist/include/
+              [ -f rocksdb-${{ needs.check.outputs.version }}/build/librocksdb.a ] && \
+                cp rocksdb-${{ needs.check.outputs.version }}/build/librocksdb.a dist/lib/
+
+              echo 'Creating archive...'
+              ARCHIVE=\"rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz\"
+              cd dist
+              tar -cf - . | xz -9 > ../\$ARCHIVE
+            "
+
+      - name: Build RocksDB (musl)
+        if: ${{ matrix.platform.use_musl == true }}
+        shell: bash
+        run: |
           echo "Creating archive..."
           ARCHIVE="${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz"
           cd dist
           tar -cf - . | xz -9 > $ARCHIVE
-          echo "archive=$ARCHIVE" >> $GITHUB_OUTPUT
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}
-          path: ${{ steps.build.outputs.archive }}
+          path: rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz
 
   # release:
   #   name: Release
