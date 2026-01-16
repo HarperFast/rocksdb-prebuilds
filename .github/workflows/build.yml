@@ -292,7 +292,7 @@ jobs:
           echo "Archive created: $ARCHIVE"
 
       - name: Build RocksDB (linux musl)
-        if: ${{ matrix.platform.use_musl && matrix.platform.target == 'linux-x64-musl' || matrix.platform.target == 'linux-arm64-musl' }}
+        if: ${{ matrix.platform.target == 'linux-x64-musl' || matrix.platform.target == 'linux-arm64-musl' }}
         shell: bash
         run: |
           # Download RocksDB
