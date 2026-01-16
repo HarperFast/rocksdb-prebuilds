@@ -71,14 +71,27 @@ jobs:
         shell: bash
         run: |
           git clone https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
-          $VCPKG_ROOT/bootstrap-vcpkg.sh
-          $VCPKG_ROOT/vcpkg integrate install
+          if [[ "${{ matrix.platform.runner }}" == *"windows"* ]]; then
+            $VCPKG_ROOT/bootstrap-vcpkg.bat
+            VCPKG_CMD="$VCPKG_ROOT/vcpkg.exe"
+          else
+            $VCPKG_ROOT/bootstrap-vcpkg.sh
+            VCPKG_CMD="$VCPKG_ROOT/vcpkg"
+          fi
+          $VCPKG_CMD integrate install
+          echo "VCPKG_CMD=$VCPKG_CMD" >> $GITHUB_ENV
 
       - name: Install compression libraries
         shell: bash
         run: |
-          # install snappy, lz4, zlib, zstd
-          $VCPKG_ROOT/vcpkg install snappy lz4 zlib zstd
+          # install snappy, lz4, zlib, zstd with the correct triplet
+          if [[ "${{ matrix.platform.runner }}" == *"windows"* ]]; then
+            VCPKG_CMD="$VCPKG_ROOT/vcpkg.exe"
+            $VCPKG_CMD install snappy lz4 zlib zstd --triplet ${{ matrix.platform.target }}
+          else
+            VCPKG_CMD="$VCPKG_ROOT/vcpkg"
+            $VCPKG_CMD install snappy lz4 zlib zstd
+          fi
 
       - name: Download and build RocksDB
         id: build
@@ -93,16 +106,21 @@ jobs:
           mkdir build
           cd build
           echo "Building RocksDB..."
-          cmake .. \
-            -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DPORTABLE=ON \
-            -DWITH_SNAPPY=ON \
-            -DWITH_LZ4=ON \
-            -DWITH_ZLIB=ON \
-            -DWITH_ZSTD=ON \
-            -DROCKSDB_BUILD_SHARED=OFF \
+          CMAKE_ARGS=(
+            -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+            -DCMAKE_BUILD_TYPE=Release
+            -DPORTABLE=ON
+            -DWITH_SNAPPY=ON
+            -DWITH_LZ4=ON
+            -DWITH_ZLIB=ON
+            -DWITH_ZSTD=ON
+            -DROCKSDB_BUILD_SHARED=OFF
             -DWITH_GFLAGS=OFF
+          )
+          if [[ "${{ matrix.platform.runner }}" == *"windows"* ]]; then
+            CMAKE_ARGS+=(-DVCPKG_TARGET_TRIPLET=${{ matrix.platform.target }})
+          fi
+          cmake .. "${CMAKE_ARGS[@]}"
           cmake --build . --config Release
           ls -la
           cd ..
