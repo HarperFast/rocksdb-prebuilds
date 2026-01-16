@@ -88,6 +88,19 @@ jobs:
           if [[ "${{ matrix.platform.runner }}" == *"windows"* ]]; then
             VCPKG_CMD="$VCPKG_ROOT/vcpkg.exe"
             $VCPKG_CMD install snappy lz4 zlib zstd --triplet ${{ matrix.platform.target }}
+            echo "Verifying Snappy installation..."
+            INSTALLED_INCLUDE="$VCPKG_ROOT/installed/${{ matrix.platform.target }}/include"
+            if [[ -f "$INSTALLED_INCLUDE/snappy-sinksource.h" ]]; then
+              echo "✓ snappy-sinksource.h found at root"
+            elif [[ -f "$INSTALLED_INCLUDE/snappy/snappy-sinksource.h" ]]; then
+              echo "✓ snappy-sinksource.h found in snappy/ subdirectory"
+            else
+              echo "✗ snappy-sinksource.h NOT found"
+              echo "Checking installed directory structure:"
+              find "$INSTALLED_INCLUDE" -name "*snappy*" -type f | head -20 || true
+              echo "All files in include directory:"
+              ls -la "$INSTALLED_INCLUDE/" || true
+            fi
           else
             VCPKG_CMD="$VCPKG_ROOT/vcpkg"
             $VCPKG_CMD install snappy lz4 zlib zstd
@@ -96,6 +109,9 @@ jobs:
       - name: Download and build RocksDB
         id: build
         shell: bash
+        env:
+          VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+          VCPKG_TARGET_TRIPLET: ${{ matrix.platform.target }}
         run: |
           URL="https://github.com/facebook/rocksdb/archive/refs/tags/v${{ needs.check.outputs.version }}.tar.gz"
           echo "Downloading: $URL"
@@ -106,9 +122,23 @@ jobs:
           mkdir build
           cd build
           echo "Building RocksDB..."
+          echo "VCPKG_ROOT: $VCPKG_ROOT"
+          echo "VCPKG_TARGET_TRIPLET: $VCPKG_TARGET_TRIPLET"
+          if [[ "${{ matrix.platform.runner }}" == *"windows"* ]]; then
+            # Convert Windows path to forward slashes for CMake
+            TOOLCHAIN_FILE=$(echo "$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" | sed 's|\\|/|g')
+            INSTALLED_DIR=$(echo "$VCPKG_ROOT/installed/${{ matrix.platform.target }}" | sed 's|\\|/|g')
+            echo "Installed directory: $INSTALLED_DIR"
+            echo "Checking Snappy headers:"
+            ls -la "$INSTALLED_DIR/include/" | grep snappy || true
+          else
+            TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+          fi
+          echo "Toolchain file: $TOOLCHAIN_FILE"
           CMAKE_ARGS=(
-            -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+            -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN_FILE"
             -DCMAKE_BUILD_TYPE=Release
+            -DCMAKE_FIND_PACKAGE_PREFER_CONFIG=ON
             -DPORTABLE=ON
             -DWITH_SNAPPY=ON
             -DWITH_LZ4=ON
@@ -118,9 +148,14 @@ jobs:
             -DWITH_GFLAGS=OFF
           )
           if [[ "${{ matrix.platform.runner }}" == *"windows"* ]]; then
-            CMAKE_ARGS+=(-DVCPKG_TARGET_TRIPLET=${{ matrix.platform.target }})
+            CMAKE_ARGS+=(
+              -DVCPKG_TARGET_TRIPLET=${{ matrix.platform.target }}
+              -DCMAKE_PREFIX_PATH="$INSTALLED_DIR"
+            )
           fi
           cmake .. "${CMAKE_ARGS[@]}"
+          echo "CMake configuration complete. Checking Snappy detection:"
+          cmake -N -L .. | grep -i snappy || true
           cmake --build . --config Release
           ls -la
           cd ..
