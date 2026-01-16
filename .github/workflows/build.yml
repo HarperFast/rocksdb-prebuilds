@@ -18,7 +18,7 @@ jobs:
         shell: bash
         run: |
           URL="https://api.github.com/repos/facebook/rocksdb/releases/latest"
-          LATEST=$(curl -s -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -X GET "$URL" | jq -r '.tag_name' | tr -d 'v')
+          LATEST=$(curl -s -L -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -X GET "$URL" | jq -r '.tag_name' | tr -d 'v')
           echo "version=$LATEST" >> $GITHUB_OUTPUT
 
       - name: Get latest prebuild
@@ -26,7 +26,7 @@ jobs:
         shell: bash
         run: |
           URL="https://api.github.com/repos/harperdb/rocksdb-prebuilds/releases/latest"
-          LATEST=$(curl -s -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -X GET "$URL" | jq -r '.tag_name' | tr -d 'v')
+          LATEST=$(curl -s -L -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -X GET "$URL" | jq -r '.tag_name' | tr -d 'v')
           echo "version=$LATEST" >> $GITHUB_OUTPUT
 
       - name: Check if we should build
@@ -65,7 +65,7 @@ jobs:
         shell: bash
         run: |
           # download and extract
-          curl -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -L -o rocksdb.tar.gz "https://github.com/facebook/rocksdb/archive/refs/tags/v${{ needs.check.outputs.version }}.tar.gz"
+          curl -L -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -o rocksdb.tar.gz "https://github.com/facebook/rocksdb/archive/refs/tags/v${{ needs.check.outputs.version }}.tar.gz"
           tar -xzf rocksdb.tar.gz
           cd rocksdb-${{ needs.check.outputs.version }}
 
