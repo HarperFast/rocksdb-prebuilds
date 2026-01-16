@@ -112,11 +112,7 @@ jobs:
           export VCPKG_ROOT="$VCPKG_ROOT"
 
           # Add snappy buildtree include directory to CMAKE_CXX_FLAGS if found
-          CMAKE_CXX_FLAGS_EXTRA=""
-          if [ -n "$SNAPPY_BUILDTREE_INCLUDE" ] && [ -d "$SNAPPY_BUILDTREE_INCLUDE" ]; then
-            CMAKE_CXX_FLAGS_EXTRA="-I$SNAPPY_BUILDTREE_INCLUDE"
-            echo "Adding snappy buildtree include directory to CMAKE_CXX_FLAGS: $CMAKE_CXX_FLAGS_EXTRA"
-          fi
+          CMAKE_CXX_FLAGS_EXTRA="-I$VCPKG_ROOT/installed/$VCPKG_TRIPLET/include"
 
           cmake .. \
             -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
