@@ -19,6 +19,7 @@ jobs:
         run: |
           URL="https://api.github.com/repos/facebook/rocksdb/releases/latest"
           LATEST=$(curl -s -L -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -X GET "$URL" | jq -r '.tag_name' | tr -d 'v')
+          echo "Latest RocksDB release: $LATEST"
           echo "version=$LATEST" >> $GITHUB_OUTPUT
 
       - name: Get latest prebuild
@@ -27,6 +28,7 @@ jobs:
         run: |
           URL="https://api.github.com/repos/harperdb/rocksdb-prebuilds/releases/latest"
           LATEST=$(curl -s -L -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -X GET "$URL" | jq -r '.tag_name' | tr -d 'v')
+          echo "Latest RocksDB prebuild: $LATEST"
           echo "version=$LATEST" >> $GITHUB_OUTPUT
 
       - name: Check if we should build
@@ -35,8 +37,10 @@ jobs:
         run: |
           if [[ "${{ steps.latest-rocksdb.outputs.version }}" != "${{ steps.latest-prebuild.outputs.version }}" ]]; then
             echo "should_build=true" >> $GITHUB_OUTPUT
+            echo "New RocksDB release!"
           else
             echo "should_build=false" >> $GITHUB_OUTPUT
+            echo "No new RocksDB release"
           fi
 
   build:
@@ -65,18 +69,32 @@ jobs:
         shell: bash
         run: |
           # download and extract
-          curl -L -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -o rocksdb.tar.gz "https://github.com/facebook/rocksdb/archive/refs/tags/v${{ needs.check.outputs.version }}.tar.gz"
+          URL="https://github.com/facebook/rocksdb/archive/refs/tags/v${{ needs.check.outputs.version }}.tar.gz"
+          echo "Downloading: $URL"
+          curl -L -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -o rocksdb.tar.gz "$URL"
+          echo "Extracting RocksDB..."
           tar -xzf rocksdb.tar.gz
           cd rocksdb-${{ needs.check.outputs.version }}
 
           # build
           mkdir build
           cd build
-          cmake .. -DCMAKE_BUILD_TYPE=Release -DPORTABLE=ON -DWITH_SNAPPY=ON -DWITH_LZ4=ON -DWITH_ZLIB=ON -DWITH_ZSTD=ON -DROCKSDB_BUILD_SHARED=OFF
+          echo "Building RocksDB..."
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPORTABLE=ON \
+            -DWITH_SNAPPY=ON \
+            -DWITH_LZ4=ON \
+            -DWITH_ZLIB=ON \
+            -DWITH_ZSTD=ON \
+            -DROCKSDB_BUILD_SHARED=OFF \
+            -DWITH_GFLAGS=OFF
           cmake --build . --config Release
+          ls -la
           cd ..
 
           # copy files to dist
+          echo "Copying files to dist..."
           mkdir -p dist/include
           mkdir -p dist/lib
           mv include/rocksdb dist/include/
@@ -92,6 +110,7 @@ jobs:
           ARCHIVE="${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz"
           cd dist
           tar -cf - . | xz -9 > $ARCHIVE
+          ls -la $ARCHIVE
           echo "archive=$ARCHIVE" >> $GITHUB_OUTPUT
 
       - name: Upload artifact
