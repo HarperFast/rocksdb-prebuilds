@@ -57,12 +57,12 @@ jobs:
           #   target: darwin-x64
           # - runner: ubuntu-22.04
           #   target: linux-x64-glibc
-          - runner: ubuntu-latest
-            target: linux-x64-musl
+          # - runner: ubuntu-latest
+          #   target: linux-x64-musl
           # - runner: ubuntu-22.04-arm
           #   target: linux-arm64-glibc
-          - runner: ubuntu-24.04-arm
-            target: linux-arm64-musl
+          # - runner: ubuntu-24.04-arm
+          #   target: linux-arm64-musl
           - runner: windows-latest
             target: windows-x64
           - runner: windows-latest
@@ -93,45 +93,8 @@ jobs:
           # Install compression libraries with the correct triplet
           "$VCPKG_CMD" install snappy lz4 zlib zstd --triplet "$VCPKG_TRIPLET"
 
-          # Debug: Verify snappy installation and headers
-          echo "Checking vcpkg installation..."
           echo "VCPKG_ROOT: $VCPKG_ROOT"
           echo "VCPKG_TRIPLET: $VCPKG_TRIPLET"
-
-          # Print the entire directory structure of $VCPKG_ROOT
-          echo "--------------------------------"
-          ls -la "$VCPKG_ROOT"
-          echo "--------------------------------"
-          echo "Directory structure of $VCPKG_ROOT:"
-          find "$VCPKG_ROOT" -type f -o -type d
-          echo "--------------------------------"
-
-          if [ -d "$VCPKG_ROOT/installed/$VCPKG_TRIPLET/include" ]; then
-            echo "installed/$VCPKG_TRIPLET/include exists"
-            echo "Contents:"
-            ls -la "$VCPKG_ROOT/installed/$VCPKG_TRIPLET/include/" || true
-            if [ -d "$VCPKG_ROOT/installed/$VCPKG_TRIPLET/include/snappy" ]; then
-              echo "snappy include directory exists:"
-              find "$VCPKG_ROOT/installed/$VCPKG_TRIPLET/include/snappy" -name "*.h" -o -name "*.hpp" | head -20
-            fi
-          else
-            echo "installed/$VCPKG_TRIPLET/include does not exist"
-          fi
-
-          # Find snappy include directory in vcpkg buildtrees and add to include path
-          SNAPPY_BUILDTREE_INCLUDE=""
-          if [ -d "$VCPKG_ROOT/buildtrees/snappy" ]; then
-            # Find the include directory in buildtrees (typically in src subdirectory)
-            SNAPPY_BUILDTREE_INCLUDE=$(find "$VCPKG_ROOT/buildtrees/snappy" -type d -name "include" 2>/dev/null | head -1)
-            if [ -z "$SNAPPY_BUILDTREE_INCLUDE" ]; then
-              # If no include directory found, use the buildtrees root directory
-              SNAPPY_BUILDTREE_INCLUDE="$VCPKG_ROOT/buildtrees/snappy"
-            fi
-            echo "Found snappy buildtree include directory: $SNAPPY_BUILDTREE_INCLUDE"
-            ls -la "$SNAPPY_BUILDTREE_INCLUDE/"
-          else
-            echo "Warning: snappy buildtree directory not found"
-          fi
 
           # Download RocksDB
           URL="https://github.com/facebook/rocksdb/archive/refs/tags/v${{ needs.check.outputs.version }}.tar.gz"
@@ -145,7 +108,7 @@ jobs:
           echo "Building RocksDB..."
 
           # Set CMAKE_PREFIX_PATH to help CMake find vcpkg packages
-          export CMAKE_PREFIX_PATH="$VCPKG_ROOT/vcpkg_installed/$VCPKG_TRIPLET"
+          export CMAKE_PREFIX_PATH="$VCPKG_ROOT/installed/$VCPKG_TRIPLET"
           export VCPKG_ROOT="$VCPKG_ROOT"
 
           # Add snappy buildtree include directory to CMAKE_CXX_FLAGS if found
@@ -153,16 +116,6 @@ jobs:
           if [ -n "$SNAPPY_BUILDTREE_INCLUDE" ] && [ -d "$SNAPPY_BUILDTREE_INCLUDE" ]; then
             CMAKE_CXX_FLAGS_EXTRA="-I$SNAPPY_BUILDTREE_INCLUDE"
             echo "Adding snappy buildtree include directory to CMAKE_CXX_FLAGS: $CMAKE_CXX_FLAGS_EXTRA"
-          fi
-
-          # Verify snappy headers are accessible before CMake configure
-          echo "Final check before CMake configure:"
-          if [ -f "$VCPKG_ROOT/vcpkg_installed/$VCPKG_TRIPLET/include/snappy/snappy-sinksource.h" ]; then
-            echo "✓ snappy-sinksource.h found at: $VCPKG_ROOT/vcpkg_installed/$VCPKG_TRIPLET/include/snappy/snappy-sinksource.h"
-          elif [ -n "$SNAPPY_BUILDTREE_INCLUDE" ] && [ -d "$SNAPPY_BUILDTREE_INCLUDE" ]; then
-            echo "✓ Using snappy buildtree include directory: $SNAPPY_BUILDTREE_INCLUDE"
-          else
-            echo "✗ snappy headers NOT found - build may fail"
           fi
 
           cmake .. \
@@ -176,7 +129,7 @@ jobs:
             -DWITH_ZSTD=ON \
             -DROCKSDB_BUILD_SHARED=OFF \
             -DWITH_GFLAGS=OFF \
-            -DCMAKE_PREFIX_PATH="$VCPKG_ROOT/vcpkg_installed/$VCPKG_TRIPLET" \
+            -DCMAKE_PREFIX_PATH="$VCPKG_ROOT/installed/$VCPKG_TRIPLET" \
             -DCMAKE_CXX_FLAGS="$CMAKE_CXX_FLAGS_EXTRA"
           cmake --build . --config Release
           cd ..
