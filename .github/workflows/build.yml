@@ -10,33 +10,32 @@ jobs:
     name: Check for new release
     runs-on: ubuntu-latest
     outputs:
-      should_build: ${{ steps.check-release.outputs.should_build }}
-      version: ${{ steps.check-release.outputs.version }}
+      should_build: ${{ steps.check-build.outputs.should_build }}
+      version: ${{ steps.latest-rocksdb.outputs.version }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install vcpkg
+      - name: Get latest RocksDB release
+        id: latest-rocksdb
         shell: bash
         run: |
-          export VCPKG_ROOT="$HOME/vcpkg"
-          git clone https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
-          $VCPKG_ROOT/bootstrap-vcpkg.sh
-          $VCPKG_ROOT/vcpkg integrate install
+          URL="https://api.github.com/repos/facebook/rocksdb/releases/latest"
+          LATEST=$(curl -s -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -X GET "$URL" | jq -r '.tag_name' | tr -d 'v')
+          echo "version=$LATEST" >> $GITHUB_OUTPUT
 
-      - name: Checking if we should build
-        id: check-release
+      - name: Get latest prebuild
+        id: latest-prebuild
         shell: bash
         run: |
           URL="https://api.github.com/repos/harperdb/rocksdb-prebuilds/releases/latest"
-          CURRENT=$(curl -s -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -X GET "$URL" | jq -r '.tag_name' | tr -d 'v')
-          LATEST=$(jq -r ".versions[0].version" "$HOME/vcpkg/versions/r-/rocksdb.json")
+          LATEST=$(curl -s -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -X GET "$URL" | jq -r '.tag_name' | tr -d 'v')
           echo "version=$LATEST" >> $GITHUB_OUTPUT
-          if [[ "${LATEST}" != "${CURRENT}" ]]; then
-            echo "Found new release: ${LATEST} (current: ${CURRENT})"
+
+      - name: Check if we should build
+        id: check-build
+        shell: bash
+        run: |
+          if [[ "${{ steps.latest-rocksdb.outputs.version }}" != "${{ steps.latest-prebuild.outputs.version }}" ]]; then
             echo "should_build=true" >> $GITHUB_OUTPUT
           else
-            echo "No new releases"
             echo "should_build=false" >> $GITHUB_OUTPUT
           fi
 
@@ -52,7 +51,7 @@ jobs:
             target: arm64-osx
           - runner: macos-latest
             target: x64-osx
-          - runner: ubuntu-latest
+          - runner: ubuntu-22.04
             target: x64-linux
           - runner: ubuntu-24.04-arm
             target: arm64-linux
@@ -62,37 +61,36 @@ jobs:
             target: arm64-windows
     runs-on: ${{ matrix.platform.runner }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install vcpkg
+      - name: Download RocksDB
         shell: bash
         run: |
-          export VCPKG_ROOT="$HOME/vcpkg"
-          git clone https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
-          $VCPKG_ROOT/bootstrap-vcpkg.sh
-          $VCPKG_ROOT/vcpkg integrate install
+          # download and extract
+          curl -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -L -o rocksdb.tar.gz "https://github.com/facebook/rocksdb/archive/refs/tags/v${{ needs.check.outputs.version }}.tar.gz"
+          tar -xzf rocksdb.tar.gz
+          cd rocksdb-${{ needs.check.outputs.version }}
 
-      - name: Configure static build
-        shell: bash
-        run: |
-          echo "set(VCPKG_LIBRARY_LINKAGE static)" > temp.txt
-          cat "$HOME/vcpkg/ports/rocksdb/portfile.cmake" >> temp.txt
-          mv -f temp.txt "$HOME/vcpkg/ports/rocksdb/portfile.cmake"
+          # build
+          mkdir build
+          cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DPORTABLE=ON -DWITH_SNAPPY=ON -DWITH_LZ4=ON -DWITH_ZLIB=ON -DWITH_ZSTD=ON -DROCKSDB_BUILD_SHARED=OFF
+          cmake --build . --config Release
+          cd ..
 
-      - name: Build RocksDB
-        shell: bash
-        env:
-          MACOSX_DEPLOYMENT_TARGET: "11.0"
-        run: |
-          $HOME/vcpkg/vcpkg install rocksdb:${{ matrix.platform.target }}
+          # copy files to dist
+          mkdir -p dist/include
+          mkdir -p dist/lib
+          mv include/rocksdb dist/include/
 
-      - name: Create archive
-        id: archive
-        shell: bash
-        run: |
+          # linux/macos
+          cp build/librocksdb.a dist/lib/
+
+          # windows
+          cp build/rocksdb.lib dist/lib/
+          cp build/rocksdbd.lib dist/lib/
+
+          # create archive
           ARCHIVE="${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz"
-          cd "$HOME/vcpkg/installed/${{ matrix.platform.target }}"
+          cd dist
           tar -cf - . | xz -9 > $ARCHIVE
           echo "archive=$ARCHIVE" >> $GITHUB_OUTPUT
 
@@ -100,79 +98,79 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}
-          path: ${{ steps.archive.outputs.archive }}
+          path: rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.gz
 
-  release:
-    name: Release
-    needs: [check, build]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+  # release:
+  #   name: Release
+  #   needs: [check, build]
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v4
 
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
+  #     - name: Download all artifacts
+  #       uses: actions/download-artifact@v4
+  #       with:
+  #         path: artifacts
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-2
+  #     - name: Configure AWS credentials
+  #       uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  #         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  #         aws-region: us-east-2
 
-      - name: Upload artifacts to S3
-        run: |
-          aws s3 cp artifacts/ s3://harper-artifacts/rocksdb-prebuilds/v${{ needs.check.outputs.version }}/ --recursive
+  #     - name: Upload artifacts to S3
+  #       run: |
+  #         aws s3 cp artifacts/ s3://harper-artifacts/rocksdb-prebuilds/v${{ needs.check.outputs.version }}/ --recursive
 
-      - name: Create release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: artifacts/**/*.tar.xz
-          body: |
-            Automated prebuilds for RocksDB v${{ needs.check.outputs.version }}
+  #     - name: Create release
+  #       uses: softprops/action-gh-release@v2
+  #       with:
+  #         files: artifacts/**/*.tar.xz
+  #         body: |
+  #           Automated prebuilds for RocksDB v${{ needs.check.outputs.version }}
 
-            Release notes: https://github.com/facebook/rocksdb/releases/tag/v${{ needs.check.outputs.version }}
-          name: RocksDB v${{ needs.check.outputs.version }}
-          tag_name: v${{ needs.check.outputs.version }}
-          token: ${{ secrets.GH_TOKEN }}
+  #           Release notes: https://github.com/facebook/rocksdb/releases/tag/v${{ needs.check.outputs.version }}
+  #         name: RocksDB v${{ needs.check.outputs.version }}
+  #         tag_name: v${{ needs.check.outputs.version }}
+  #         token: ${{ secrets.GH_TOKEN }}
 
-      - name: Send Slack notification
-        uses: slackapi/slack-github-action@v2.0.0
-        with:
-          method: chat.postMessage
-          token: ${{ secrets.SLACK_BOT_TOKEN }}
-          payload: |
-            {
-              "channel": "${{ secrets.SLACK_CHANNEL_ID }}",
-              "text": "New RocksDB prebuild: v${{ needs.check.outputs.version }}",
-              "blocks": [
-                {
-                  "type": "header",
-                  "text": {
-                    "type": "plain_text",
-                    "text": "New RocksDB prebuild: v${{ needs.check.outputs.version }}"
-                  }
-                },
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "https://github.com/harperdb/rocksdb-prebuilds/releases/tag/v${{ needs.check.outputs.version }}"
-                  }
-                }
-              ]
-            }
+  #     - name: Send Slack notification
+  #       uses: slackapi/slack-github-action@v2.0.0
+  #       with:
+  #         method: chat.postMessage
+  #         token: ${{ secrets.SLACK_BOT_TOKEN }}
+  #         payload: |
+  #           {
+  #             "channel": "${{ secrets.SLACK_CHANNEL_ID }}",
+  #             "text": "New RocksDB prebuild: v${{ needs.check.outputs.version }}",
+  #             "blocks": [
+  #               {
+  #                 "type": "header",
+  #                 "text": {
+  #                   "type": "plain_text",
+  #                   "text": "New RocksDB prebuild: v${{ needs.check.outputs.version }}"
+  #                 }
+  #               },
+  #               {
+  #                 "type": "section",
+  #                 "text": {
+  #                   "type": "mrkdwn",
+  #                   "text": "https://github.com/harperdb/rocksdb-prebuilds/releases/tag/v${{ needs.check.outputs.version }}"
+  #                 }
+  #               }
+  #             ]
+  #           }
 
-      - name: Repository Dispatch
-        uses: peter-evans/repository-dispatch@v3
-        with:
-          event-type: new-rocksdb-prebuild
-          repository: harperdb/rocksdb-js
-          token: ${{ secrets.GH_TOKEN }}
-          client-payload: |
-            {
-              "url": "https://github.com/harperdb/rocksdb-prebuilds/releases/tag/v${{ needs.check.outputs.version }}",
-              "version": "${{ needs.check.outputs.version }}"
-            }
+  #     - name: Repository Dispatch
+  #       uses: peter-evans/repository-dispatch@v3
+  #       with:
+  #         event-type: new-rocksdb-prebuild
+  #         repository: harperdb/rocksdb-js
+  #         token: ${{ secrets.GH_TOKEN }}
+  #         client-payload: |
+  #           {
+  #             "url": "https://github.com/harperdb/rocksdb-prebuilds/releases/tag/v${{ needs.check.outputs.version }}",
+  #             "version": "${{ needs.check.outputs.version }}"
+  #           }
