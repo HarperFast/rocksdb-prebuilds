@@ -57,8 +57,8 @@ jobs:
           #   target: x64-osx
           - runner: ubuntu-22.04
             target: x64-linux
-          # - runner: ubuntu-24.04-arm
-          #   target: arm64-linux
+          - runner: ubuntu-24.04-arm
+            target: arm64-linux
           # - runner: windows-latest
           #   target: x64-windows
           # - runner: windows-latest
@@ -104,7 +104,6 @@ jobs:
             -DROCKSDB_BUILD_SHARED=OFF \
             -DWITH_GFLAGS=OFF
           cmake --build . --config Release
-          ls -la
           cd ..
 
           echo "Copying files to dist..."
@@ -113,17 +112,16 @@ jobs:
           mv include/rocksdb dist/include/
 
           # linux/macos
-          cp build/librocksdb.a dist/lib/
+          [ -f build/librocksdb.a ] && cp build/librocksdb.a dist/lib/
 
           # windows
-          cp build/rocksdb.lib dist/lib/
-          cp build/rocksdbd.lib dist/lib/
+          [ -f build/rocksdb.lib ] && cp build/rocksdb.lib dist/lib/
+          [ -f build/rocksdbd.lib ] && cp build/rocksdbd.lib dist/lib/
 
           echo "Creating archive..."
           ARCHIVE="${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz"
           cd dist
           tar -cf - . | xz -9 > $ARCHIVE
-          ls -la
           echo "archive=$ARCHIVE" >> $GITHUB_OUTPUT
 
       - name: Upload artifact
