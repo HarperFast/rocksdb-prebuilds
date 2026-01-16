@@ -97,18 +97,12 @@ jobs:
           echo "Checking vcpkg installation..."
           echo "VCPKG_ROOT: $VCPKG_ROOT"
           echo "VCPKG_TRIPLET: $VCPKG_TRIPLET"
-          echo "Listing $VCPKG_ROOT"
-          ls -la "$VCPKG_ROOT"
-          echo "Listing $VCPKG_ROOT/installed"
-          ls -la "$VCPKG_ROOT/installed"
 
-          if [ -d "$VCPKG_ROOT/installed/$VCPKG_TRIPLET" ]; then
-            echo "installed/$VCPKG_TRIPLET exists"
-            echo "Contents:"
-            ls -la "$VCPKG_ROOT/installed/$VCPKG_TRIPLET/" || true
-          else
-            echo "installed/$VCPKG_TRIPLET does not exist"
-          fi
+          # Print the entire directory structure of $VCPKG_ROOT
+          echo "--------------------------------"
+          echo "Directory structure of $VCPKG_ROOT:"
+          tree -L 6 -a "$VCPKG_ROOT"
+          echo "--------------------------------"
 
           if [ -d "$VCPKG_ROOT/installed/$VCPKG_TRIPLET/include" ]; then
             echo "installed/$VCPKG_TRIPLET/include exists"
