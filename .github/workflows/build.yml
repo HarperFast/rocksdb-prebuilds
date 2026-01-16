@@ -55,13 +55,13 @@ jobs:
           #   target: darwin-arm64
           # - runner: macos-latest
           #   target: darwin-x64
-          - runner: ubuntu-22.04
-            target: linux-x64-glibc
+          # - runner: ubuntu-22.04
+          #   target: linux-x64-glibc
           - runner: ubuntu-latest
             target: linux-x64-musl
             use_musl: true
-          - runner: ubuntu-22.04-arm
-            target: linux-arm64-glibc
+          # - runner: ubuntu-22.04-arm
+          #   target: linux-arm64-glibc
           - runner: ubuntu-24.04-arm
             target: linux-arm64-musl
             use_musl: true
@@ -155,6 +155,7 @@ jobs:
               echo 'Building RocksDB with musl...'
               cmake .. \
                 -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_CXX_FLAGS="-Wno-maybe-uninitialized" \
                 -DPORTABLE=ON \
                 -DWITH_SNAPPY=ON \
                 -DWITH_LZ4=ON \
