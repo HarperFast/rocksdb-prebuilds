@@ -187,8 +187,8 @@ endif ()
 # Edit these 4 lines to define paths to ZSTD
 #
 set(ZSTD_INCLUDE $ENV{VCPKG_ROOT}/installed/x64-windows/include)
-set(ZSTD_LIB_DEBUG  $ENV{VCPKG_ROOT}/buildtrees/zstd/x64-windows-dbg/zlib.lib)
-set(ZSTD_LIB_RELEASE $ENV{VCPKG_ROOT}/buildtrees/zstd/x64-windows-rel/zlib.lib)
+set(ZSTD_LIB_DEBUG  $ENV{VCPKG_ROOT}/buildtrees/zstd/x64-windows-dbg/lib/zstd.lib)
+set(ZSTD_LIB_RELEASE $ENV{VCPKG_ROOT}/buildtrees/zstd/x64-windows-rel/lib/zstd.lib)
 
 # For compatibility
 if (ZSTD)
