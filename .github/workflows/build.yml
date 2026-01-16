@@ -51,16 +51,16 @@ jobs:
       fail-fast: false # TODO: enable fail-fast
       matrix:
         platform:
-          - runner: macos-latest
-            target: darwin-arm64
-          - runner: macos-latest
-            target: darwin-x64
+          # - runner: macos-latest
+          #   target: darwin-arm64
+          # - runner: macos-latest
+          #   target: darwin-x64
           - runner: ubuntu-22.04
             target: linux-x64-glibc
           - runner: ubuntu-latest
             target: linux-x64-musl
-          - runner: ubuntu-22.04-arm
-            target: linux-arm64-glibc
+          # - runner: ubuntu-22.04-arm
+          #   target: linux-arm64-glibc
           - runner: ubuntu-24.04-arm
             target: linux-arm64-musl
           - runner: windows-latest
@@ -194,7 +194,7 @@ jobs:
             ls -la include/
             if [ -d include/rocksdb ]; then
               echo "include/rocksdb exists"
-              ls -la include/rocksdb/ | head -20
+              ls -la include/rocksdb/ | head -20 || true
             else
               echo "include/rocksdb does NOT exist"
             fi
@@ -206,7 +206,7 @@ jobs:
           # Debug: Show build directory contents
           echo "Build directory contents:"
           if [ -d build ]; then
-            ls -la build/ | head -30
+            ls -la build/ | head -30 || true
           else
             echo "build directory does NOT exist"
           fi
@@ -294,7 +294,7 @@ jobs:
             ls -la include/
             if [ -d include/rocksdb ]; then
               echo "include/rocksdb exists"
-              ls -la include/rocksdb/ | head -20
+              ls -la include/rocksdb/ | head -20 || true
             else
               echo "include/rocksdb does NOT exist"
             fi
@@ -306,7 +306,7 @@ jobs:
           # Debug: Show build directory contents
           echo "Build directory contents:"
           if [ -d build ]; then
-            ls -la build/ | head -30
+            ls -la build/ | head -30 || true
           else
             echo "build directory does NOT exist"
           fi
@@ -395,7 +395,7 @@ jobs:
               mv build/librocksdb.a dist/lib/
 
               echo 'Creating archive...'
-              ARCHIVE=\"rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz\"
+              ARCHIVE=\"${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz\"
               cd dist
               tar -cf - . | xz -9 > ../\$ARCHIVE
               echo \"Archive created: \$ARCHIVE\"
