@@ -394,7 +394,7 @@ jobs:
               mv build/librocksdb.a dist/lib/
 
               echo 'Creating archive...'
-              ARCHIVE=\"${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz\"
+              ARCHIVE=\"/workspace/rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz\"
               cd dist
               tar -cf - . | xz -9 > \$ARCHIVE
               echo \"Archive created: \$ARCHIVE\"
