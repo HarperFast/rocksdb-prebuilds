@@ -101,7 +101,7 @@ jobs:
           # Print the entire directory structure of $VCPKG_ROOT
           echo "--------------------------------"
           echo "Directory structure of $VCPKG_ROOT:"
-          tree /F "$VCPKG_ROOT"
+          find "$VCPKG_ROOT" -type f -o -type d | head -50
           echo "--------------------------------"
 
           if [ -d "$VCPKG_ROOT/installed/$VCPKG_TRIPLET/include" ]; then
