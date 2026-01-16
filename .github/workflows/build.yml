@@ -48,13 +48,13 @@ jobs:
     needs: [check]
     if: ${{ needs.check.outputs.should_build == 'true' }}
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         platform:
-          # - runner: macos-latest
-          #   target: arm64-osx
-          # - runner: macos-latest
-          #   target: x64-osx
+          - runner: macos-latest
+            target: arm64-osx
+          - runner: macos-latest
+            target: x64-osx
           - runner: ubuntu-22.04
             target: x64-linux
           - runner: ubuntu-24.04-arm
