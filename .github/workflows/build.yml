@@ -71,6 +71,9 @@ jobs:
     env:
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Build RocksDB (windows)
         if: ${{ matrix.platform.target == 'windows-x64' || matrix.platform.target == 'windows-arm64' }}
         env:
@@ -102,6 +105,12 @@ jobs:
           curl -L -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -o rocksdb.tar.gz "$URL"
           tar -xzf rocksdb.tar.gz
 
+          if [ "${{ matrix.platform.target }}" == "windows-arm64" ]; then
+            cp windows/arm64/* rocksdb-${{ needs.check.outputs.version }}/
+          else
+            cp windows/x64/* rocksdb-${{ needs.check.outputs.version }}/
+          fi
+
           cd rocksdb-${{ needs.check.outputs.version }}
           mkdir build
           cd build
@@ -111,9 +120,6 @@ jobs:
           export CMAKE_PREFIX_PATH="$VCPKG_ROOT/installed/$VCPKG_TRIPLET"
           find "$VCPKG_ROOT/installed/$VCPKG_TRIPLET/lib" -type f -o -type d
           export VCPKG_ROOT="$VCPKG_ROOT"
-
-          # Add snappy buildtree include directory to CMAKE_CXX_FLAGS if found
-          CMAKE_CXX_FLAGS_EXTRA="-I$VCPKG_ROOT/installed/$VCPKG_TRIPLET/include"
 
           cmake .. \
             -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
@@ -127,8 +133,7 @@ jobs:
             -DROCKSDB_BUILD_SHARED=OFF \
             -DWITH_GFLAGS=OFF \
             -DCMAKE_PREFIX_PATH="$VCPKG_ROOT/installed/$VCPKG_TRIPLET" \
-            -DCMAKE_CXX_FLAGS="$CMAKE_CXX_FLAGS_EXTRA" \
-            -DCMAKE_LIBRARY_PATH="$VCPKG_ROOT/installed/$VCPKG_TRIPLET/lib"
+            -DCMAKE_CXX_FLAGS="$CMAKE_CXX_FLAGS_EXTRA"
           cmake --build . --config Release
           cd ..
 
