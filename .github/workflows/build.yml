@@ -64,14 +64,21 @@ jobs:
           - runner: windows-latest
             target: arm64-windows
     runs-on: ${{ matrix.platform.runner }}
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/vcpkg
     steps:
       - name: Install vcpkg
         shell: bash
         run: |
-          export VCPKG_ROOT="$HOME/vcpkg"
           git clone https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
           $VCPKG_ROOT/bootstrap-vcpkg.sh
           $VCPKG_ROOT/vcpkg integrate install
+
+      - name: Install compression libraries
+        shell: bash
+        run: |
+          # install snappy, lz4, zlib, zstd
+          $VCPKG_ROOT/vcpkg install snappy lz4 zlib zstd
 
       - name: Download RocksDB
         shell: bash
@@ -80,17 +87,14 @@ jobs:
           URL="https://github.com/facebook/rocksdb/archive/refs/tags/v${{ needs.check.outputs.version }}.tar.gz"
           echo "Downloading: $URL"
           curl -L -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -o rocksdb.tar.gz "$URL"
-          echo "Extracting RocksDB..."
           tar -xzf rocksdb.tar.gz
           cd rocksdb-${{ needs.check.outputs.version }}
 
-          # install snappy, lz4, zlib, zstd
-          vcpkg install snappy lz4 zlib zstd
-
-          # build
+      - name: Build RocksDB
+        shell: bash
+        run: |
           mkdir build
           cd build
-          echo "Building RocksDB..."
           cmake .. \
             -DCMAKE_BUILD_TYPE=Release \
             -DPORTABLE=ON \
@@ -104,8 +108,9 @@ jobs:
           ls -la
           cd ..
 
-          # copy files to dist
-          echo "Copying files to dist..."
+      - name: Copy files to dist
+        shell: bash
+        run: |
           mkdir -p dist/include
           mkdir -p dist/lib
           mv include/rocksdb dist/include/
@@ -117,11 +122,13 @@ jobs:
           cp build/rocksdb.lib dist/lib/
           cp build/rocksdbd.lib dist/lib/
 
-          # create archive
+      - name: Create archive
+        shell: bash
+        run: |
           ARCHIVE="${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz"
           cd dist
           tar -cf - . | xz -9 > $ARCHIVE
-          ls -la $ARCHIVE
+          ls -la
           echo "archive=$ARCHIVE" >> $GITHUB_OUTPUT
 
       - name: Upload artifact
