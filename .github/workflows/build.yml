@@ -51,24 +51,24 @@ jobs:
       fail-fast: false # TODO: enable fail-fast
       matrix:
         platform:
-          # - runner: macos-latest
-          #   target: darwin-arm64
-          # - runner: macos-latest
-          #   target: darwin-x64
-          # - runner: ubuntu-22.04
-          #   target: linux-x64-glibc
+          - runner: macos-latest
+            target: darwin-arm64
+          - runner: macos-latest
+            target: darwin-x64
+          - runner: ubuntu-22.04
+            target: linux-x64-glibc
           - runner: ubuntu-latest
             target: linux-x64-musl
             use_musl: true
-          # - runner: ubuntu-22.04-arm
-          #   target: linux-arm64-glibc
+          - runner: ubuntu-22.04-arm
+            target: linux-arm64-glibc
           - runner: ubuntu-24.04-arm
             target: linux-arm64-musl
             use_musl: true
-          # - runner: windows-latest
-          #   target: windows-x64
-          # - runner: windows-latest
-          #   target: windows-arm64
+          - runner: windows-latest
+            target: windows-x64
+          - runner: windows-latest
+            target: windows-arm64
     runs-on: ${{ matrix.platform.runner }}
     env:
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
@@ -140,8 +140,10 @@ jobs:
               apk add --no-cache \
                 build-base \
                 cmake \
-                git \
                 curl \
+                git \
+                linux-headers \
+                musl-dev \
                 zlib-dev \
                 snappy-dev \
                 lz4-dev \
