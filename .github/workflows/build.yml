@@ -55,8 +55,8 @@ jobs:
           #   target: darwin-arm64
           # - runner: macos-latest
           #   target: darwin-x64
-          - runner: ubuntu-22.04
-            target: linux-x64-glibc
+          # - runner: ubuntu-22.04
+          #   target: linux-x64-glibc
           - runner: ubuntu-latest
             target: linux-x64-musl
           # - runner: ubuntu-22.04-arm
@@ -97,27 +97,29 @@ jobs:
           echo "Checking vcpkg installation..."
           echo "VCPKG_ROOT: $VCPKG_ROOT"
           echo "VCPKG_TRIPLET: $VCPKG_TRIPLET"
-          echo "Listing $VCPKG_ROOT/vcpkg_installed"
-          ls -la "$VCPKG_ROOT/vcpkg_installed"
+          echo "Listing $VCPKG_ROOT"
+          ls -la "$VCPKG_ROOT"
+          echo "Listing $VCPKG_ROOT/installed"
+          ls -la "$VCPKG_ROOT/installed"
 
-          if [ -d "$VCPKG_ROOT/vcpkg_installed/$VCPKG_TRIPLET" ]; then
-            echo "vcpkg_installed/$VCPKG_TRIPLET exists"
+          if [ -d "$VCPKG_ROOT/installed/$VCPKG_TRIPLET" ]; then
+            echo "installed/$VCPKG_TRIPLET exists"
             echo "Contents:"
-            ls -la "$VCPKG_ROOT/vcpkg_installed/$VCPKG_TRIPLET/" || true
+            ls -la "$VCPKG_ROOT/installed/$VCPKG_TRIPLET/" || true
           else
-            echo "vcpkg_installed/$VCPKG_TRIPLET does not exist"
+            echo "installed/$VCPKG_TRIPLET does not exist"
           fi
 
-          if [ -d "$VCPKG_ROOT/vcpkg_installed/$VCPKG_TRIPLET/include" ]; then
-            echo "vcpkg_installed/$VCPKG_TRIPLET/include exists"
+          if [ -d "$VCPKG_ROOT/installed/$VCPKG_TRIPLET/include" ]; then
+            echo "installed/$VCPKG_TRIPLET/include exists"
             echo "Contents:"
-            ls -la "$VCPKG_ROOT/vcpkg_installed/$VCPKG_TRIPLET/include/" || true
-            if [ -d "$VCPKG_ROOT/vcpkg_installed/$VCPKG_TRIPLET/include/snappy" ]; then
+            ls -la "$VCPKG_ROOT/installed/$VCPKG_TRIPLET/include/" || true
+            if [ -d "$VCPKG_ROOT/installed/$VCPKG_TRIPLET/include/snappy" ]; then
               echo "snappy include directory exists:"
-              find "$VCPKG_ROOT/vcpkg_installed/$VCPKG_TRIPLET/include/snappy" -name "*.h" -o -name "*.hpp" | head -20
+              find "$VCPKG_ROOT/installed/$VCPKG_TRIPLET/include/snappy" -name "*.h" -o -name "*.hpp" | head -20
             fi
           else
-            echo "vcpkg_installed/$VCPKG_TRIPLET/include does not exist"
+            echo "installed/$VCPKG_TRIPLET/include does not exist"
           fi
 
           # Find snappy include directory in vcpkg buildtrees and add to include path
@@ -400,7 +402,7 @@ jobs:
               echo 'Creating archive...'
               ARCHIVE=\"${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz\"
               cd dist
-              tar -cf - . | xz -9 > ../\$ARCHIVE
+              tar -cf - . | xz -9 > \$ARCHIVE
               echo \"Archive created: \$ARCHIVE\"
             "
 
