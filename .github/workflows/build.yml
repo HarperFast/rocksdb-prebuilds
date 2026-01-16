@@ -59,12 +59,10 @@ jobs:
             target: linux-x64-glibc
           - runner: ubuntu-latest
             target: linux-x64-musl
-            use_musl: true
           - runner: ubuntu-22.04-arm
             target: linux-arm64-glibc
           - runner: ubuntu-24.04-arm
             target: linux-arm64-musl
-            use_musl: true
           - runner: windows-latest
             target: windows-x64
           - runner: windows-latest
@@ -73,8 +71,128 @@ jobs:
     env:
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
     steps:
-      - name: Build RocksDB
-        if: ${{ !matrix.platform.use_musl }}
+      - name: Build RocksDB (windows)
+        if: ${{ matrix.platform.target == 'windows-x64' || matrix.platform.target == 'windows-arm64' }}
+        env:
+          VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+        shell: bash
+        run: |
+          # Install vcpkg
+          git clone https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
+
+          # Bootstrap vcpkg (use .bat on Windows, .sh on Unix)
+          if [ -f "$VCPKG_ROOT/bootstrap-vcpkg.bat" ]; then
+            "$VCPKG_ROOT/bootstrap-vcpkg.bat"
+          else
+            "$VCPKG_ROOT/bootstrap-vcpkg.sh"
+          fi
+
+          # Determine triplet based on target architecture
+          if [ "${{ matrix.platform.target }}" == "windows-arm64" ]; then
+            VCPKG_TRIPLET="arm64-windows"
+          else
+            VCPKG_TRIPLET="x64-windows"
+          fi
+
+          # Determine vcpkg executable name (Windows uses .exe, Unix doesn't)
+          if [ -f "$VCPKG_ROOT/vcpkg.exe" ]; then
+            VCPKG_CMD="$VCPKG_ROOT/vcpkg.exe"
+          else
+            VCPKG_CMD="$VCPKG_ROOT/vcpkg"
+          fi
+
+          # Install compression libraries with the correct triplet
+          "$VCPKG_CMD" install snappy lz4 zlib zstd --triplet "$VCPKG_TRIPLET"
+
+          # Download RocksDB
+          URL="https://github.com/facebook/rocksdb/archive/refs/tags/v${{ needs.check.outputs.version }}.tar.gz"
+          echo "Downloading: $URL"
+          curl -L -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -o rocksdb.tar.gz "$URL"
+          tar -xzf rocksdb.tar.gz
+
+          cd rocksdb-${{ needs.check.outputs.version }}
+          mkdir build
+          cd build
+          echo "Building RocksDB..."
+          cmake .. \
+            -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_TARGET_TRIPLET="$VCPKG_TRIPLET" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPORTABLE=ON \
+            -DWITH_SNAPPY=ON \
+            -DWITH_LZ4=ON \
+            -DWITH_ZLIB=ON \
+            -DWITH_ZSTD=ON \
+            -DROCKSDB_BUILD_SHARED=OFF \
+            -DWITH_GFLAGS=OFF
+          cmake --build . --config Release
+          cd ..
+
+          echo "Copying files to dist..."
+
+          # Debug: Show current directory and contents
+          echo "Current directory: $(pwd)"
+          echo "Directory contents:"
+          ls -la
+          echo ""
+
+          # Debug: Show include directory contents
+          echo "Include directory contents:"
+          if [ -d include ]; then
+            ls -la include/
+            if [ -d include/rocksdb ]; then
+              echo "include/rocksdb exists"
+              ls -la include/rocksdb/ | head -20
+            else
+              echo "include/rocksdb does NOT exist"
+            fi
+          else
+            echo "include directory does NOT exist"
+          fi
+          echo ""
+
+          # Debug: Show build directory contents
+          echo "Build directory contents:"
+          if [ -d build ]; then
+            ls -la build/ | head -30
+          else
+            echo "build directory does NOT exist"
+          fi
+          echo ""
+
+          mkdir -p dist/include
+          mkdir -p dist/lib
+
+          # Debug: Show dist directory before copy
+          echo "Dist directory before copy:"
+          ls -la dist/
+          echo ""
+
+          mv include/rocksdb dist/include/
+
+          # linux/macos
+          [ -f build/librocksdb.a ] && cp build/librocksdb.a dist/lib/
+
+          # windows
+          [ -f build/rocksdb.lib ] && cp build/rocksdb.lib dist/lib/
+          [ -f build/rocksdbd.lib ] && cp build/rocksdbd.lib dist/lib/
+
+          # Debug: Show dist directory after copy
+          echo "Dist directory after copy:"
+          ls -la dist/
+          echo "Dist/include contents:"
+          ls -la dist/include/
+          echo "Dist/lib contents:"
+          ls -la dist/lib/
+
+          echo "Creating archive..."
+          ARCHIVE="${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz"
+          cd dist
+          tar -cf - . | xz -9 > ../$ARCHIVE
+          echo "Archive created: $ARCHIVE"
+
+      - name: Build RocksDB (linux/macos)
+        if: ${{ matrix.platform.target != 'linux-x64-musl' && matrix.platform.target != 'linux-arm64-musl' && matrix.platform.target != 'windows-x64' && matrix.platform.target != 'windows-arm64' }}
         env:
           VCPKG_ROOT: ${{ github.workspace }}/vcpkg
         shell: bash
@@ -111,8 +229,45 @@ jobs:
           cd ..
 
           echo "Copying files to dist..."
+
+          # Debug: Show current directory and contents
+          echo "Current directory: $(pwd)"
+          echo "Directory contents:"
+          ls -la
+          echo ""
+
+          # Debug: Show include directory contents
+          echo "Include directory contents:"
+          if [ -d include ]; then
+            ls -la include/
+            if [ -d include/rocksdb ]; then
+              echo "include/rocksdb exists"
+              ls -la include/rocksdb/ | head -20
+            else
+              echo "include/rocksdb does NOT exist"
+            fi
+          else
+            echo "include directory does NOT exist"
+          fi
+          echo ""
+
+          # Debug: Show build directory contents
+          echo "Build directory contents:"
+          if [ -d build ]; then
+            ls -la build/ | head -30
+          else
+            echo "build directory does NOT exist"
+          fi
+          echo ""
+
           mkdir -p dist/include
           mkdir -p dist/lib
+
+          # Debug: Show dist directory before copy
+          echo "Dist directory before copy:"
+          ls -la dist/
+          echo ""
+
           mv include/rocksdb dist/include/
 
           # linux/macos
@@ -122,8 +277,22 @@ jobs:
           [ -f build/rocksdb.lib ] && cp build/rocksdb.lib dist/lib/
           [ -f build/rocksdbd.lib ] && cp build/rocksdbd.lib dist/lib/
 
-      - name: Build RocksDB (musl)
-        if: ${{ matrix.platform.use_musl }}
+          # Debug: Show dist directory after copy
+          echo "Dist directory after copy:"
+          ls -la dist/
+          echo "Dist/include contents:"
+          ls -la dist/include/
+          echo "Dist/lib contents:"
+          ls -la dist/lib/
+
+          echo "Creating archive..."
+          ARCHIVE="${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz"
+          cd dist
+          tar -cf - . | xz -9 > ../$ARCHIVE
+          echo "Archive created: $ARCHIVE"
+
+      - name: Build RocksDB (linux musl)
+        if: ${{ matrix.platform.use_musl && matrix.platform.target == 'linux-x64-musl' || matrix.platform.target == 'linux-arm64-musl' }}
         shell: bash
         run: |
           # Download RocksDB
@@ -166,28 +335,19 @@ jobs:
                 -DROCKSDB_BUILD_SHARED=OFF \
                 -DWITH_GFLAGS=OFF
               cmake --build . --config Release
-              cd ../..
+              cd ..
 
               echo 'Copying files to dist...'
-              mkdir -p dist/include dist/lib
-              mv rocksdb-${{ needs.check.outputs.version }}/include/rocksdb dist/include/
-              [ -f rocksdb-${{ needs.check.outputs.version }}/build/librocksdb.a ] && \
-                cp rocksdb-${{ needs.check.outputs.version }}/build/librocksdb.a dist/lib/
+              mkdir -p include dist/lib
+              mv include/rocksdb dist/include/
+              mv build/librocksdb.a dist/lib/
 
               echo 'Creating archive...'
               ARCHIVE=\"rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz\"
               cd dist
               tar -cf - . | xz -9 > ../\$ARCHIVE
+              echo \"Archive created: \$ARCHIVE\"
             "
-
-      - name: Build RocksDB (musl)
-        if: ${{ matrix.platform.use_musl == true }}
-        shell: bash
-        run: |
-          echo "Creating archive..."
-          ARCHIVE="${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz"
-          cd dist
-          tar -cf - . | xz -9 > $ARCHIVE
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
