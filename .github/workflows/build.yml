@@ -65,6 +65,14 @@ jobs:
             target: arm64-windows
     runs-on: ${{ matrix.platform.runner }}
     steps:
+      - name: Install vcpkg
+        shell: bash
+        run: |
+          export VCPKG_ROOT="$HOME/vcpkg"
+          git clone https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
+          $VCPKG_ROOT/bootstrap-vcpkg.sh
+          $VCPKG_ROOT/vcpkg integrate install
+
       - name: Download RocksDB
         shell: bash
         run: |
@@ -75,6 +83,9 @@ jobs:
           echo "Extracting RocksDB..."
           tar -xzf rocksdb.tar.gz
           cd rocksdb-${{ needs.check.outputs.version }}
+
+          # install snappy, lz4, zlib, zstd
+          vcpkg install snappy lz4 zlib zstd
 
           # build
           mkdir build
