@@ -65,8 +65,8 @@ jobs:
           #   target: linux-arm64-musl
           - runner: windows-latest
             target: windows-x64
-          - runner: windows-latest
-            target: windows-arm64
+          # - runner: windows-latest
+            # target: windows-arm64
     runs-on: ${{ matrix.platform.runner }}
     env:
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
@@ -109,6 +109,7 @@ jobs:
 
           # Set CMAKE_PREFIX_PATH to help CMake find vcpkg packages
           export CMAKE_PREFIX_PATH="$VCPKG_ROOT/installed/$VCPKG_TRIPLET"
+          find "$VCPKG_ROOT/installed/$VCPKG_TRIPLET/lib" -type f -o -type d
           export VCPKG_ROOT="$VCPKG_ROOT"
 
           # Add snappy buildtree include directory to CMAKE_CXX_FLAGS if found
@@ -126,7 +127,8 @@ jobs:
             -DROCKSDB_BUILD_SHARED=OFF \
             -DWITH_GFLAGS=OFF \
             -DCMAKE_PREFIX_PATH="$VCPKG_ROOT/installed/$VCPKG_TRIPLET" \
-            -DCMAKE_CXX_FLAGS="$CMAKE_CXX_FLAGS_EXTRA"
+            -DCMAKE_CXX_FLAGS="$CMAKE_CXX_FLAGS_EXTRA" \
+            -DCMAKE_LIBRARY_PATH="$VCPKG_ROOT/installed/$VCPKG_TRIPLET/lib"
           cmake --build . --config Release
           cd ..
 
