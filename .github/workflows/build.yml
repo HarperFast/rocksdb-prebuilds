@@ -118,36 +118,18 @@ jobs:
             fi
           fi
 
-          # Check if snappy-sinksource.h exists in vcpkg buildtree/packages and copy if needed
-          SNAPPY_INCLUDE="$VCPKG_ROOT/vcpkg_installed/$VCPKG_TRIPLET/include/snappy"
-          mkdir -p "$SNAPPY_INCLUDE"
-
-          if [ ! -f "$SNAPPY_INCLUDE/snappy-sinksource.h" ]; then
-            echo "snappy-sinksource.h not found in installed headers, searching in vcpkg directories..."
-            # Search for the header in vcpkg's buildtree and packages directories
-            SNAPPY_HEADER=$(find "$VCPKG_ROOT/buildtrees/snappy" "$VCPKG_ROOT/packages" -name "snappy-sinksource.h" 2>/dev/null | head -1)
-            if [ -n "$SNAPPY_HEADER" ] && [ -f "$SNAPPY_HEADER" ]; then
-              echo "Found snappy-sinksource.h: $SNAPPY_HEADER"
-              cp "$SNAPPY_HEADER" "$SNAPPY_INCLUDE/"
-              echo "Copied snappy-sinksource.h to $SNAPPY_INCLUDE/"
-            else
-              echo "snappy-sinksource.h not found in vcpkg. Downloading from snappy repository..."
-              # Download the header directly from snappy's GitHub repository
-              SNAPPY_VERSION=$(curl -s https://api.github.com/repos/google/snappy/releases/latest | grep '"tag_name"' | cut -d'"' -f4 || echo "1.1.10")
-              echo "Using snappy version: $SNAPPY_VERSION"
-              curl -L -o "$SNAPPY_INCLUDE/snappy-sinksource.h" \
-                "https://raw.githubusercontent.com/google/snappy/${SNAPPY_VERSION}/snappy-sinksource.h" || \
-                curl -L -o "$SNAPPY_INCLUDE/snappy-sinksource.h" \
-                "https://raw.githubusercontent.com/google/snappy/master/snappy-sinksource.h"
-
-              if [ -f "$SNAPPY_INCLUDE/snappy-sinksource.h" ]; then
-                echo "Downloaded snappy-sinksource.h to $SNAPPY_INCLUDE/"
-              else
-                echo "Warning: Failed to download snappy-sinksource.h"
-              fi
+          # Find snappy include directory in vcpkg buildtrees and add to include path
+          SNAPPY_BUILDTREE_INCLUDE=""
+          if [ -d "$VCPKG_ROOT/buildtrees/snappy" ]; then
+            # Find the include directory in buildtrees (typically in src subdirectory)
+            SNAPPY_BUILDTREE_INCLUDE=$(find "$VCPKG_ROOT/buildtrees/snappy" -type d -name "include" 2>/dev/null | head -1)
+            if [ -z "$SNAPPY_BUILDTREE_INCLUDE" ]; then
+              # If no include directory found, use the buildtrees root directory
+              SNAPPY_BUILDTREE_INCLUDE="$VCPKG_ROOT/buildtrees/snappy"
             fi
+            echo "Found snappy buildtree include directory: $SNAPPY_BUILDTREE_INCLUDE"
           else
-            echo "snappy-sinksource.h already exists in installed headers"
+            echo "Warning: snappy buildtree directory not found"
           fi
 
           # Download RocksDB
@@ -165,12 +147,21 @@ jobs:
           export CMAKE_PREFIX_PATH="$VCPKG_ROOT/vcpkg_installed/$VCPKG_TRIPLET"
           export VCPKG_ROOT="$VCPKG_ROOT"
 
+          # Add snappy buildtree include directory to CMAKE_CXX_FLAGS if found
+          CMAKE_CXX_FLAGS_EXTRA=""
+          if [ -n "$SNAPPY_BUILDTREE_INCLUDE" ] && [ -d "$SNAPPY_BUILDTREE_INCLUDE" ]; then
+            CMAKE_CXX_FLAGS_EXTRA="-I$SNAPPY_BUILDTREE_INCLUDE"
+            echo "Adding snappy buildtree include directory to CMAKE_CXX_FLAGS: $CMAKE_CXX_FLAGS_EXTRA"
+          fi
+
           # Verify snappy headers are accessible before CMake configure
           echo "Final check before CMake configure:"
           if [ -f "$VCPKG_ROOT/vcpkg_installed/$VCPKG_TRIPLET/include/snappy/snappy-sinksource.h" ]; then
             echo "✓ snappy-sinksource.h found at: $VCPKG_ROOT/vcpkg_installed/$VCPKG_TRIPLET/include/snappy/snappy-sinksource.h"
+          elif [ -n "$SNAPPY_BUILDTREE_INCLUDE" ] && [ -d "$SNAPPY_BUILDTREE_INCLUDE" ]; then
+            echo "✓ Using snappy buildtree include directory: $SNAPPY_BUILDTREE_INCLUDE"
           else
-            echo "✗ snappy-sinksource.h NOT found - build may fail"
+            echo "✗ snappy headers NOT found - build may fail"
           fi
 
           cmake .. \
@@ -184,7 +175,8 @@ jobs:
             -DWITH_ZSTD=ON \
             -DROCKSDB_BUILD_SHARED=OFF \
             -DWITH_GFLAGS=OFF \
-            -DCMAKE_PREFIX_PATH="$VCPKG_ROOT/vcpkg_installed/$VCPKG_TRIPLET"
+            -DCMAKE_PREFIX_PATH="$VCPKG_ROOT/vcpkg_installed/$VCPKG_TRIPLET" \
+            -DCMAKE_CXX_FLAGS="$CMAKE_CXX_FLAGS_EXTRA"
           cmake --build . --config Release
           cd ..
 
