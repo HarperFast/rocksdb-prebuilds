@@ -80,21 +80,19 @@ jobs:
           # install snappy, lz4, zlib, zstd
           $VCPKG_ROOT/vcpkg install snappy lz4 zlib zstd
 
-      - name: Download RocksDB
+      - name: Download and build RocksDB
+        id: build
         shell: bash
         run: |
-          # download and extract
           URL="https://github.com/facebook/rocksdb/archive/refs/tags/v${{ needs.check.outputs.version }}.tar.gz"
           echo "Downloading: $URL"
           curl -L -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -o rocksdb.tar.gz "$URL"
           tar -xzf rocksdb.tar.gz
-          cd rocksdb-${{ needs.check.outputs.version }}
 
-      - name: Build RocksDB
-        shell: bash
-        run: |
+          cd rocksdb-${{ needs.check.outputs.version }}
           mkdir build
           cd build
+          echo "Building RocksDB..."
           cmake .. \
             -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
             -DCMAKE_BUILD_TYPE=Release \
@@ -109,9 +107,7 @@ jobs:
           ls -la
           cd ..
 
-      - name: Copy files to dist
-        shell: bash
-        run: |
+          echo "Copying files to dist..."
           mkdir -p dist/include
           mkdir -p dist/lib
           mv include/rocksdb dist/include/
@@ -123,9 +119,7 @@ jobs:
           cp build/rocksdb.lib dist/lib/
           cp build/rocksdbd.lib dist/lib/
 
-      - name: Create archive
-        shell: bash
-        run: |
+          echo "Creating archive..."
           ARCHIVE="${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz"
           cd dist
           tar -cf - . | xz -9 > $ARCHIVE
@@ -136,7 +130,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}
-          path: rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.gz
+          path: ${{ steps.build.outputs.archive }}
 
   # release:
   #   name: Release
