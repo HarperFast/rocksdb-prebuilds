@@ -110,14 +110,11 @@ jobs:
           cd build
 
           export CMAKE_PREFIX_PATH="$VCPKG_ROOT/installed/$VCPKG_TRIPLET"
-          find "$CMAKE_PREFIX_PATH/lib" -type f -o -type d
-          export VCPKG_ROOT="$VCPKG_ROOT"
-
-          echo "Prefix path directory:"
-          ls -la "$CMAKE_PREFIX_PATH/"
 
           echo "Building RocksDB..."
           cmake .. \
+            -DCMAKE_CXX_FLAGS="-I$CMAKE_PREFIX_PATH/include" \
+            -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
             -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_TARGET_TRIPLET="$VCPKG_TRIPLET" \
             -DCMAKE_BUILD_TYPE=Release \
@@ -127,8 +124,7 @@ jobs:
             -DWITH_ZLIB=ON \
             -DWITH_ZSTD=ON \
             -DROCKSDB_BUILD_SHARED=OFF \
-            -DWITH_GFLAGS=OFF \
-            -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH"
+            -DWITH_GFLAGS=OFF
           cmake --build . --config Release
           cd ..
 
