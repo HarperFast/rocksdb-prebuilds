@@ -66,7 +66,7 @@ jobs:
           - runner: windows-latest
             target: windows-x64
           # - runner: windows-latest
-            # target: windows-arm64
+          #   target: windows-arm64
     runs-on: ${{ matrix.platform.runner }}
     env:
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
@@ -93,35 +93,26 @@ jobs:
             VCPKG_TRIPLET="x64-windows"
           fi
 
-          # Install compression libraries with the correct triplet
-          "$VCPKG_CMD" install snappy lz4 zlib zstd --triplet "$VCPKG_TRIPLET"
-
           echo "VCPKG_ROOT: $VCPKG_ROOT"
           echo "VCPKG_TRIPLET: $VCPKG_TRIPLET"
+
+          # Install compression libraries
+          "$VCPKG_CMD" install snappy lz4 zlib zstd --triplet "$VCPKG_TRIPLET"
 
           # Download RocksDB
           URL="https://github.com/facebook/rocksdb/archive/refs/tags/v${{ needs.check.outputs.version }}.tar.gz"
           echo "Downloading: $URL"
           curl -L -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -o rocksdb.tar.gz "$URL"
+
           tar -xzf rocksdb.tar.gz
-
-          if [ "${{ matrix.platform.target }}" == "windows-arm64" ]; then
-            cp windows/arm64/* rocksdb-${{ needs.check.outputs.version }}/
-          else
-            cp windows/x64/* rocksdb-${{ needs.check.outputs.version }}/
-          fi
-
+          cp windows/thirdparty.inc rocksdb-${{ needs.check.outputs.version }}/
           cd rocksdb-${{ needs.check.outputs.version }}
           mkdir build
           cd build
+
           echo "Building RocksDB..."
-
-          # Set CMAKE_PREFIX_PATH to help CMake find vcpkg packages
-          export CMAKE_PREFIX_PATH="$VCPKG_ROOT/installed/$VCPKG_TRIPLET"
-          find "$VCPKG_ROOT/installed/$VCPKG_TRIPLET/lib" -type f -o -type d
-          export VCPKG_ROOT="$VCPKG_ROOT"
-
           cmake .. \
+            -DCMAKE_PREFIX_PATH="$VCPKG_ROOT/installed/$VCPKG_TRIPLET" \
             -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_TARGET_TRIPLET="$VCPKG_TRIPLET" \
             -DCMAKE_BUILD_TYPE=Release \
@@ -131,63 +122,20 @@ jobs:
             -DWITH_ZLIB=ON \
             -DWITH_ZSTD=ON \
             -DROCKSDB_BUILD_SHARED=OFF \
-            -DWITH_GFLAGS=OFF \
-            -DCMAKE_PREFIX_PATH="$VCPKG_ROOT/installed/$VCPKG_TRIPLET" \
-            -DCMAKE_CXX_FLAGS="$CMAKE_CXX_FLAGS_EXTRA"
+            -DWITH_GFLAGS=OFF
           cmake --build . --config Release
           cd ..
 
           echo "Copying files to dist..."
-
-          # Debug: Show current directory and contents
-          echo "Current directory: $(pwd)"
-          echo "Directory contents:"
-          ls -la
-          echo ""
-
-          # Debug: Show include directory contents
-          echo "Include directory contents:"
-          if [ -d include ]; then
-            ls -la include/
-            if [ -d include/rocksdb ]; then
-              echo "include/rocksdb exists"
-              ls -la include/rocksdb/ | head -20 || true
-            else
-              echo "include/rocksdb does NOT exist"
-            fi
-          else
-            echo "include directory does NOT exist"
-          fi
-          echo ""
-
-          # Debug: Show build directory contents
-          echo "Build directory contents:"
-          if [ -d build ]; then
-            ls -la build/ | head -30 || true
-          else
-            echo "build directory does NOT exist"
-          fi
-          echo ""
-
           mkdir -p dist/include
           mkdir -p dist/lib
-
-          # Debug: Show dist directory before copy
-          echo "Dist directory before copy:"
-          ls -la dist/
-          echo ""
-
           mv include/rocksdb dist/include/
-
-          # linux/macos
-          [ -f build/librocksdb.a ] && cp build/librocksdb.a dist/lib/
-
-          # windows
           [ -f build/rocksdb.lib ] && cp build/rocksdb.lib dist/lib/
           [ -f build/rocksdbd.lib ] && cp build/rocksdbd.lib dist/lib/
 
-          # Debug: Show dist directory after copy
-          echo "Dist directory after copy:"
+          echo "Build directory:"
+          ls -la build/
+          echo "Dist directory:"
           ls -la dist/
           echo "Dist/include contents:"
           ls -la dist/include/
@@ -200,7 +148,7 @@ jobs:
           tar -cf - . | xz -9 > "$ARCHIVE"
           echo "Archive created: $ARCHIVE"
 
-      - name: Build RocksDB (linux/macos)
+      - name: Build RocksDB (linux glibc/macos)
         if: ${{ matrix.platform.target != 'linux-x64-musl' && matrix.platform.target != 'linux-arm64-musl' && matrix.platform.target != 'windows-x64' && matrix.platform.target != 'windows-arm64' }}
         env:
           VCPKG_ROOT: ${{ github.workspace }}/vcpkg
@@ -209,7 +157,8 @@ jobs:
           # Install vcpkg
           git clone https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
           $VCPKG_ROOT/bootstrap-vcpkg.sh
-          $VCPKG_ROOT/vcpkg integrate install
+
+          echo "VCPKG_ROOT: $VCPKG_ROOT"
 
           # Install compression libraries
           $VCPKG_ROOT/vcpkg install snappy lz4 zlib zstd
@@ -218,11 +167,12 @@ jobs:
           URL="https://github.com/facebook/rocksdb/archive/refs/tags/v${{ needs.check.outputs.version }}.tar.gz"
           echo "Downloading: $URL"
           curl -L -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -o rocksdb.tar.gz "$URL"
-          tar -xzf rocksdb.tar.gz
 
+          tar -xzf rocksdb.tar.gz
           cd rocksdb-${{ needs.check.outputs.version }}
           mkdir build
           cd build
+
           echo "Building RocksDB..."
           cmake .. \
             -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
@@ -238,53 +188,10 @@ jobs:
           cd ..
 
           echo "Copying files to dist..."
-
-          # Debug: Show current directory and contents
-          echo "Current directory: $(pwd)"
-          echo "Directory contents:"
-          ls -la
-          echo ""
-
-          # Debug: Show include directory contents
-          echo "Include directory contents:"
-          if [ -d include ]; then
-            ls -la include/
-            if [ -d include/rocksdb ]; then
-              echo "include/rocksdb exists"
-              ls -la include/rocksdb/ | head -20 || true
-            else
-              echo "include/rocksdb does NOT exist"
-            fi
-          else
-            echo "include directory does NOT exist"
-          fi
-          echo ""
-
-          # Debug: Show build directory contents
-          echo "Build directory contents:"
-          if [ -d build ]; then
-            ls -la build/ | head -30 || true
-          else
-            echo "build directory does NOT exist"
-          fi
-          echo ""
-
           mkdir -p dist/include
           mkdir -p dist/lib
-
-          # Debug: Show dist directory before copy
-          echo "Dist directory before copy:"
-          ls -la dist/
-          echo ""
-
           mv include/rocksdb dist/include/
-
-          # linux/macos
           [ -f build/librocksdb.a ] && cp build/librocksdb.a dist/lib/
-
-          # windows
-          [ -f build/rocksdb.lib ] && cp build/rocksdb.lib dist/lib/
-          [ -f build/rocksdbd.lib ] && cp build/rocksdbd.lib dist/lib/
 
           # Debug: Show dist directory after copy
           echo "Dist directory after copy:"
@@ -332,8 +239,10 @@ jobs:
               cd rocksdb-${{ needs.check.outputs.version }}
               mkdir build
               cd build
-              echo 'Building RocksDB with musl...'
+
+              echo 'Building RocksDB...'
               cmake .. \
+                -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
                 -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_CXX_FLAGS="-Wno-maybe-uninitialized" \
                 -DPORTABLE=ON \
