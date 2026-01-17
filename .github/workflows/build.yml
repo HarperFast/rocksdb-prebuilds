@@ -83,7 +83,6 @@ jobs:
           # Install vcpkg
           git clone https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
           "$VCPKG_ROOT/bootstrap-vcpkg.bat"
-
           VCPKG_CMD="$VCPKG_ROOT/vcpkg.exe"
 
           # Determine triplet based on target architecture
@@ -111,10 +110,10 @@ jobs:
           cd build
 
           export CMAKE_PREFIX_PATH="$VCPKG_ROOT/installed/$VCPKG_TRIPLET"
+          find "$CMAKE_PREFIX_PATH/lib" -type f -o -type d
 
           echo "Building RocksDB..."
           cmake .. \
-            -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
             -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_TARGET_TRIPLET="$VCPKG_TRIPLET" \
             -DCMAKE_BUILD_TYPE=Release \
@@ -124,7 +123,8 @@ jobs:
             -DWITH_ZLIB=ON \
             -DWITH_ZSTD=ON \
             -DROCKSDB_BUILD_SHARED=OFF \
-            -DWITH_GFLAGS=OFF
+            -DWITH_GFLAGS=OFF \
+            -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH"
           cmake --build . --config Release
           cd ..
 
