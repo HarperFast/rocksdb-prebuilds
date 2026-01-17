@@ -137,7 +137,7 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_TARGET_TRIPLET="$VCPKG_TRIPLET" \
             -DCMAKE_BUILD_TYPE=Debug \
-            -DCMAKE_CXX_FLAGS="/wd4702" \ # suppress unreachable code warning
+            -DCMAKE_CXX_FLAGS="/wd4702" \
             -DPORTABLE=ON \
             -DWITH_SNAPPY=ON \
             -DWITH_LZ4=ON \
