@@ -111,6 +111,10 @@ jobs:
 
           export CMAKE_PREFIX_PATH="$VCPKG_ROOT/installed/$VCPKG_TRIPLET"
           find "$CMAKE_PREFIX_PATH/lib" -type f -o -type d
+          export VCPKG_ROOT="$VCPKG_ROOT"
+
+          echo "Prefix path directory:"
+          ls -la "$CMAKE_PREFIX_PATH/"
 
           echo "Building RocksDB..."
           cmake .. \
