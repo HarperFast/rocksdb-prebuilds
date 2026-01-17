@@ -129,12 +129,7 @@ jobs:
             -DROCKSDB_BUILD_SHARED=OFF \
             -DWITH_GFLAGS=OFF
           cmake --build . --config Release
-          cd ..
-
-          echo "Build directory:"
-          ls -la build/Release
-
-          [ -f build/Release/rocksdb.lib ] && cp build/Release/rocksdb.lib dist/lib/
+          cp Release/rocksdb.lib ../dist/lib/
 
           echo "Building RocksDB (debug)..."
           cmake .. \
@@ -150,10 +145,10 @@ jobs:
             -DROCKSDB_BUILD_SHARED=OFF \
             -DWITH_GFLAGS=OFF
           cmake --build . --config Debug
-          cd ..
           [ -f build/Debug ] && ls -la build/Debug
           [ -f build/Debug/rocksdb.lib ] && cp build/Debug/rocksdb_debug.lib dist/lib/
           [ -f build/Debug/rocksdbd.lib ] && cp build/Debug/rocksdbd.lib dist/lib/
+          cd ..
 
           mv include/rocksdb dist/include/
 
