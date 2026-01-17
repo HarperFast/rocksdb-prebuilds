@@ -113,7 +113,10 @@ jobs:
           export VCPKG_ROOT="$VCPKG_ROOT"
           export VCPKG_TRIPLET="$VCPKG_TRIPLET"
 
-          echo "Building RocksDB..."
+          mkdir -p dist/include
+          mkdir -p dist/lib
+
+          echo "Building RocksDB (release)..."
           cmake .. \
             -DCMAKE_PREFIX_PATH="$VCPKG_ROOT/installed/$VCPKG_TRIPLET" \
             -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
@@ -129,17 +132,31 @@ jobs:
           cmake --build . --config Release
           cd ..
 
-          echo "Copying files to dist..."
-          mkdir -p dist/include
-          mkdir -p dist/lib
-          mv include/rocksdb dist/include/
-          [ -f build/rocksdb.lib ] && cp build/rocksdb.lib dist/lib/
-          [ -f build/rocksdbd.lib ] && cp build/rocksdbd.lib dist/lib/
-
           echo "Build directory:"
-          ls -la build/
-          echo "Dist directory:"
-          ls -la dist/
+          ls -la build/Release
+
+          [ -f build/Release/rocksdb.lib ] && cp build/Release/rocksdb.lib dist/lib/
+
+          echo "Building RocksDB (debug)..."
+          cmake .. \
+            -DCMAKE_PREFIX_PATH="$VCPKG_ROOT/installed/$VCPKG_TRIPLET" \
+            -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_TARGET_TRIPLET="$VCPKG_TRIPLET" \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DPORTABLE=ON \
+            -DWITH_SNAPPY=ON \
+            -DWITH_LZ4=ON \
+            -DWITH_ZLIB=ON \
+            -DWITH_ZSTD=ON \
+            -DROCKSDB_BUILD_SHARED=OFF \
+            -DWITH_GFLAGS=OFF
+          cmake --build . --config Debug
+          cd ..
+          [ -f build/Debug/rocksdb.lib ] && cp build/Debug/rocksdb_debug.lib dist/lib/
+          [ -f build/Debug/rocksdbd.lib ] && cp build/Debug/rocksdbd.lib dist/lib/
+
+          mv include/rocksdb dist/include/
+
           echo "Dist/include contents:"
           ls -la dist/include/
           echo "Dist/lib contents:"
