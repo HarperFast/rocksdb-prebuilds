@@ -110,6 +110,7 @@ jobs:
           cd build
 
           export CMAKE_PREFIX_PATH="$VCPKG_ROOT/installed/$VCPKG_TRIPLET"
+          export VCPKG_ROOT="$VCPKG_ROOT"
 
           echo "Building RocksDB..."
           cmake .. \
