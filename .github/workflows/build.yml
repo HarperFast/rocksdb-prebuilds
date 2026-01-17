@@ -109,13 +109,13 @@ jobs:
           mkdir build
           cd build
 
-          export CMAKE_PREFIX_PATH="$VCPKG_ROOT/installed/$VCPKG_TRIPLET"
+          # Export vcpkg variables to be used in thirdparty.inc
           export VCPKG_ROOT="$VCPKG_ROOT"
+          export VCPKG_TRIPLET="$VCPKG_TRIPLET"
 
           echo "Building RocksDB..."
           cmake .. \
-            -DCMAKE_CXX_FLAGS="-I$CMAKE_PREFIX_PATH/include" \
-            -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
+            -DCMAKE_PREFIX_PATH="$VCPKG_ROOT/installed/$VCPKG_TRIPLET" \
             -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_TARGET_TRIPLET="$VCPKG_TRIPLET" \
             -DCMAKE_BUILD_TYPE=Release \
