@@ -107,15 +107,14 @@ jobs:
           cp windows/thirdparty.inc rocksdb-${{ needs.check.outputs.version }}/
           cd rocksdb-${{ needs.check.outputs.version }}
           mkdir build
-          cd build
+          mkdir -p dist/include
+          mkdir -p dist/lib
 
           # Export vcpkg variables to be used in thirdparty.inc
           export VCPKG_ROOT="$VCPKG_ROOT"
           export VCPKG_TRIPLET="$VCPKG_TRIPLET"
 
-          mkdir -p dist/include
-          mkdir -p dist/lib
-
+          cd build
           echo "Building RocksDB (release)..."
           cmake .. \
             -DCMAKE_PREFIX_PATH="$VCPKG_ROOT/installed/$VCPKG_TRIPLET" \
@@ -152,6 +151,7 @@ jobs:
             -DWITH_GFLAGS=OFF
           cmake --build . --config Debug
           cd ..
+          [ -f build/Debug ] && ls -la build/Debug
           [ -f build/Debug/rocksdb.lib ] && cp build/Debug/rocksdb_debug.lib dist/lib/
           [ -f build/Debug/rocksdbd.lib ] && cp build/Debug/rocksdbd.lib dist/lib/
 
