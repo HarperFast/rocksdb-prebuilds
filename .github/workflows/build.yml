@@ -51,22 +51,22 @@ jobs:
       fail-fast: false
       matrix:
         platform:
-          # - runner: macos-latest
-          #   target: darwin-arm64
-          # - runner: macos-latest
-          #   target: darwin-x64
-          # - runner: ubuntu-22.04
-          #   target: linux-x64-glibc
-          # - runner: ubuntu-latest
-          #   target: linux-x64-musl
-          # - runner: ubuntu-22.04-arm
-          #   target: linux-arm64-glibc
-          # - runner: ubuntu-24.04-arm
-          #   target: linux-arm64-musl
+          - runner: macos-latest
+            target: darwin-arm64
+          - runner: macos-latest
+            target: darwin-x64
+          - runner: ubuntu-22.04
+            target: linux-x64-glibc
+          - runner: ubuntu-latest
+            target: linux-x64-musl
+          - runner: ubuntu-22.04-arm
+            target: linux-arm64-glibc
+          - runner: ubuntu-24.04-arm
+            target: linux-arm64-musl
           - runner: windows-latest
             target: windows-x64
-          # - runner: windows-latest
-          #   target: windows-arm64
+          - runner: windows-latest
+            target: windows-arm64
     runs-on: ${{ matrix.platform.runner }}
     env:
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
@@ -145,9 +145,7 @@ jobs:
             -DROCKSDB_BUILD_SHARED=OFF \
             -DWITH_GFLAGS=OFF
           cmake --build . --config Debug
-          [ -f build/Debug ] && ls -la build/Debug
-          [ -f build/Debug/rocksdb.lib ] && cp build/Debug/rocksdb_debug.lib dist/lib/
-          [ -f build/Debug/rocksdbd.lib ] && cp build/Debug/rocksdbd.lib dist/lib/
+          cp build/Debug/rocksdb.lib dist/lib/rocksdbd.lib
           cd ..
 
           mv include/rocksdb dist/include/
