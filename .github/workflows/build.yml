@@ -127,14 +127,16 @@ jobs:
             -DWITH_ZLIB=ON \
             -DWITH_ZSTD=ON \
             -DROCKSDB_BUILD_SHARED=OFF \
-            -DWITH_GFLAGS=OFF
+            -DWITH_GFLAGS=OFF \
+            -DWITH_TESTS=OFF \
+            -DWITH_BENCHMARK_TOOLS=OFF \
+            -DWITH_TOOLS=OFF
           cmake --build . --config Release
           cp Release/rocksdb.lib ../dist/lib/
 
           echo "Building RocksDB (debug)..."
           cmake .. \
             -DCMAKE_PREFIX_PATH="$VCPKG_ROOT/installed/$VCPKG_TRIPLET" \
-            -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_TARGET_TRIPLET="$VCPKG_TRIPLET" \
             -DCMAKE_BUILD_TYPE=Debug \
             -DCMAKE_CXX_FLAGS="/wd4702" \
@@ -144,7 +146,10 @@ jobs:
             -DWITH_ZLIB=ON \
             -DWITH_ZSTD=ON \
             -DROCKSDB_BUILD_SHARED=OFF \
-            -DWITH_GFLAGS=OFF
+            -DWITH_GFLAGS=OFF \
+            -DWITH_TESTS=OFF \
+            -DWITH_BENCHMARK_TOOLS=OFF \
+            -DWITH_TOOLS=OFF
           cmake --build . --config Debug
           [ -f build/Debug ] && ls -la build/Debug
           [ -f build/Debug/rocksdb.lib ] && cp build/Debug/rocksdb_debug.lib dist/lib/
@@ -199,7 +204,10 @@ jobs:
             -DWITH_ZLIB=ON \
             -DWITH_ZSTD=ON \
             -DROCKSDB_BUILD_SHARED=OFF \
-            -DWITH_GFLAGS=OFF
+            -DWITH_GFLAGS=OFF \
+            -DWITH_TESTS=OFF \
+            -DWITH_BENCHMARK_TOOLS=OFF \
+            -DWITH_TOOLS=OFF
           cmake --build . --config Release
           cd ..
 
@@ -267,7 +275,10 @@ jobs:
                 -DWITH_ZLIB=ON \
                 -DWITH_ZSTD=ON \
                 -DROCKSDB_BUILD_SHARED=OFF \
-                -DWITH_GFLAGS=OFF
+                -DWITH_GFLAGS=OFF \
+                -DWITH_TESTS=OFF \
+                -DWITH_BENCHMARK_TOOLS=OFF \
+                -DWITH_TOOLS=OFF
               cmake --build . --config Release
               cd ..
 
