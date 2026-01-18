@@ -135,6 +135,7 @@ jobs:
           cmake .. \
             -DCMAKE_PREFIX_PATH="$VCPKG_ROOT/installed/$VCPKG_TRIPLET" \
             -DVCPKG_TARGET_TRIPLET="$VCPKG_TRIPLET" \
+            -DCMAKE_CXX_FLAGS="-Wno-unreachable-code" \
             -DCMAKE_BUILD_TYPE=Debug \
             -DPORTABLE=ON \
             -DWITH_SNAPPY=ON \
