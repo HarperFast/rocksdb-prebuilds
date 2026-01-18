@@ -51,22 +51,22 @@ jobs:
       fail-fast: false
       matrix:
         platform:
-          # - runner: macos-latest
-          #   target: darwin-arm64
-          # - runner: macos-latest
-          #   target: darwin-x64
-          # - runner: ubuntu-22.04
-          #   target: linux-x64-glibc
+          - runner: macos-latest
+            target: darwin-arm64
+          - runner: macos-latest
+            target: darwin-x64
+          - runner: ubuntu-22.04
+            target: linux-x64-glibc
           - runner: ubuntu-latest
             target: linux-x64-musl
-          # - runner: ubuntu-22.04-arm
-          #   target: linux-arm64-glibc
-          # - runner: ubuntu-24.04-arm
-          #   target: linux-arm64-musl
-          # - runner: windows-latest
-          #   target: windows-x64
-          # - runner: windows-latest
-          #   target: windows-arm64
+          - runner: ubuntu-22.04-arm
+            target: linux-arm64-glibc
+          - runner: ubuntu-24.04-arm
+            target: linux-arm64-musl
+          - runner: windows-latest
+            target: windows-x64
+          - runner: windows-latest
+            target: windows-arm64
     runs-on: ${{ matrix.platform.runner }}
     env:
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
