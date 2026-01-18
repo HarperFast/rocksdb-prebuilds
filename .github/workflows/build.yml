@@ -256,7 +256,6 @@ jobs:
 
               echo 'Building RocksDB...'
               cmake .. \
-                -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
                 -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_CXX_FLAGS="-Wno-maybe-uninitialized" \
                 -DPORTABLE=ON \
