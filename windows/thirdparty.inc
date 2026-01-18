@@ -91,7 +91,7 @@ endif ()
 # Edit these 4 lines to define paths to LZ4
 #
 set(LZ4_INCLUDE $ENV{VCPKG_ROOT}/installed/$ENV{VCPKG_TRIPLET}/include)
-set(LZ4_LIB_DEBUG $ENV{VCPKG_ROOT}/buildtrees/lz4/$ENV{VCPKG_TRIPLET}-dbg/lz4.lib)
+set(LZ4_LIB_DEBUG $ENV{VCPKG_ROOT}/buildtrees/lz4/$ENV{VCPKG_TRIPLET}-dbg/lz4d.lib)
 set(LZ4_LIB_RELEASE $ENV{VCPKG_ROOT}/buildtrees/lz4/$ENV{VCPKG_TRIPLET}-rel/lz4.lib)
 
 # For compatibility
@@ -129,7 +129,7 @@ endif ()
 # Edit these 4 lines to define paths to ZLIB
 #
 set(ZLIB_INCLUDE $ENV{VCPKG_ROOT}/installed/$ENV{VCPKG_TRIPLET}/include)
-set(ZLIB_LIB_DEBUG $ENV{VCPKG_ROOT}/buildtrees/zlib/$ENV{VCPKG_TRIPLET}-dbg/zlib.lib)
+set(ZLIB_LIB_DEBUG $ENV{VCPKG_ROOT}/buildtrees/zlib/$ENV{VCPKG_TRIPLET}-dbg/zlibd.lib)
 set(ZLIB_LIB_RELEASE $ENV{VCPKG_ROOT}/buildtrees/zlib/$ENV{VCPKG_TRIPLET}-rel/zlib.lib)
 
 # For compatibilty
