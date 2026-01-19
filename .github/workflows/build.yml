@@ -162,8 +162,7 @@ jobs:
             -DWITH_TESTS=OFF \
             -DBUILD_TESTING=OFF
           cmake --build . --config Debug --target rocksdb
-          ls -la build/Debug
-          cp build/Debug/rocksdb.lib dist/lib/rocksdbd.lib
+          cp Debug/rocksdb.lib ../dist/lib/rocksdbd.lib
           cd ..
 
           mv include/rocksdb dist/include/
