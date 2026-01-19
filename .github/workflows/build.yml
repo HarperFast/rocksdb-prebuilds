@@ -103,9 +103,10 @@ jobs:
           echo "VCPKG_ROOT: $VCPKG_ROOT"
           echo "VCPKG_TRIPLET: $VCPKG_TRIPLET"
           echo "CMAKE_ARCH: $CMAKE_ARCH"
+          cmake --version
 
           # Install compression libraries
-          "$VCPKG_CMD" install snappy lz4 zlib zstd --triplet "$VCPKG_TRIPLET"
+          "$VCPKG_CMD" install snappy lz4 zlib zstd --triplet "$VCPKG_TRIPLET" --host-triplet "$VCPKG_TRIPLET"
 
           # Download RocksDB
           URL="https://github.com/facebook/rocksdb/archive/refs/tags/v${{ needs.check.outputs.version }}.tar.gz"
@@ -124,9 +125,6 @@ jobs:
           export VCPKG_TRIPLET="$VCPKG_TRIPLET"
 
           # -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
-
-          # install cmake 3.31.10
-
 
           cd build
           echo "Building RocksDB (release)..."
