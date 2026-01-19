@@ -51,18 +51,18 @@ jobs:
       fail-fast: false
       matrix:
         platform:
-          # - runner: macos-latest
-          #   target: darwin-arm64
-          # - runner: macos-latest
-          #   target: darwin-x64
-          # - runner: ubuntu-22.04
-          #   target: linux-x64-glibc
-          # - runner: ubuntu-latest
-          #   target: linux-x64-musl
-          # - runner: ubuntu-22.04-arm
-          #   target: linux-arm64-glibc
-          # - runner: ubuntu-24.04-arm
-          #   target: linux-arm64-musl
+          - runner: macos-latest
+            target: darwin-arm64
+          - runner: macos-latest
+            target: darwin-x64
+          - runner: ubuntu-22.04
+            target: linux-x64-glibc
+          - runner: ubuntu-latest
+            target: linux-x64-musl
+          - runner: ubuntu-22.04-arm
+            target: linux-arm64-glibc
+          - runner: ubuntu-24.04-arm
+            target: linux-arm64-musl
           - runner: windows-latest
             target: windows-x64
           - runner: windows-latest
@@ -145,32 +145,27 @@ jobs:
           cmake --build . --config Release --target rocksdb
           cp Release/rocksdb.lib ../dist/lib/
 
-          echo "Building RocksDB (debug)..."
-          cmake .. \
-            -A "$CMAKE_ARCH" \
-            -DCMAKE_PREFIX_PATH="$VCPKG_ROOT/installed/$VCPKG_TRIPLET" \
-            -DVCPKG_TARGET_TRIPLET="$VCPKG_TRIPLET" \
-            -DCMAKE_CXX_FLAGS="-wd4702" \
-            -DCMAKE_BUILD_TYPE=Debug \
-            -DPORTABLE=ON \
-            -DWITH_SNAPPY=ON \
-            -DWITH_LZ4=ON \
-            -DWITH_ZLIB=ON \
-            -DWITH_ZSTD=ON \
-            -DROCKSDB_BUILD_SHARED=OFF \
-            -DWITH_GFLAGS=OFF \
-            -DWITH_TESTS=OFF \
-            -DBUILD_TESTING=OFF
-          cmake --build . --config Debug --target rocksdb
-          cp Debug/rocksdb.lib ../dist/lib/rocksdbd.lib
+          # echo "Building RocksDB (debug)..."
+          # cmake .. \
+          #   -A "$CMAKE_ARCH" \
+          #   -DCMAKE_PREFIX_PATH="$VCPKG_ROOT/installed/$VCPKG_TRIPLET" \
+          #   -DVCPKG_TARGET_TRIPLET="$VCPKG_TRIPLET" \
+          #   -DCMAKE_CXX_FLAGS="-wd4702" \
+          #   -DCMAKE_BUILD_TYPE=Debug \
+          #   -DPORTABLE=ON \
+          #   -DWITH_SNAPPY=ON \
+          #   -DWITH_LZ4=ON \
+          #   -DWITH_ZLIB=ON \
+          #   -DWITH_ZSTD=ON \
+          #   -DROCKSDB_BUILD_SHARED=OFF \
+          #   -DWITH_GFLAGS=OFF \
+          #   -DWITH_TESTS=OFF \
+          #   -DBUILD_TESTING=OFF
+          # cmake --build . --config Debug --target rocksdb
+          # cp Debug/rocksdb.lib ../dist/lib/rocksdbd.lib
           cd ..
 
           mv include/rocksdb dist/include/
-
-          echo "Dist/include contents:"
-          ls -la dist/include/
-          echo "Dist/lib contents:"
-          ls -la dist/lib/
 
           echo "Creating archive..."
           ARCHIVE="${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz"
@@ -222,14 +217,6 @@ jobs:
           mkdir -p dist/lib
           mv include/rocksdb dist/include/
           [ -f build/librocksdb.a ] && cp build/librocksdb.a dist/lib/
-
-          # Debug: Show dist directory after copy
-          echo "Dist directory after copy:"
-          ls -la dist/
-          echo "Dist/include contents:"
-          ls -la dist/include/
-          echo "Dist/lib contents:"
-          ls -la dist/lib/
 
           echo "Creating archive..."
           ARCHIVE="${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz"
@@ -303,77 +290,77 @@ jobs:
           name: rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}
           path: rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz
 
-  # release:
-  #   name: Release
-  #   needs: [check, build]
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Checkout
-  #       uses: actions/checkout@v4
+  release:
+    name: Release
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-  #     - name: Download all artifacts
-  #       uses: actions/download-artifact@v4
-  #       with:
-  #         path: artifacts
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
 
-  #     - name: Configure AWS credentials
-  #       uses: aws-actions/configure-aws-credentials@v4
-  #       with:
-  #         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-  #         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-  #         aws-region: us-east-2
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-2
 
-  #     - name: Upload artifacts to S3
-  #       run: |
-  #         aws s3 cp artifacts/ s3://harper-artifacts/rocksdb-prebuilds/v${{ needs.check.outputs.version }}/ --recursive
+      - name: Upload artifacts to S3
+        run: |
+          aws s3 cp artifacts/ s3://harper-artifacts/rocksdb-prebuilds/v${{ needs.check.outputs.version }}/ --recursive
 
-  #     - name: Create release
-  #       uses: softprops/action-gh-release@v2
-  #       with:
-  #         files: artifacts/**/*.tar.xz
-  #         body: |
-  #           Automated prebuilds for RocksDB v${{ needs.check.outputs.version }}
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*.tar.xz
+          body: |
+            Automated prebuilds for RocksDB v${{ needs.check.outputs.version }}
 
-  #           Release notes: https://github.com/facebook/rocksdb/releases/tag/v${{ needs.check.outputs.version }}
-  #         name: RocksDB v${{ needs.check.outputs.version }}
-  #         tag_name: v${{ needs.check.outputs.version }}
-  #         token: ${{ secrets.GH_TOKEN }}
+            Release notes: https://github.com/facebook/rocksdb/releases/tag/v${{ needs.check.outputs.version }}
+          name: RocksDB v${{ needs.check.outputs.version }}
+          tag_name: v${{ needs.check.outputs.version }}
+          token: ${{ secrets.GH_TOKEN }}
 
-  #     - name: Send Slack notification
-  #       uses: slackapi/slack-github-action@v2.0.0
-  #       with:
-  #         method: chat.postMessage
-  #         token: ${{ secrets.SLACK_BOT_TOKEN }}
-  #         payload: |
-  #           {
-  #             "channel": "${{ secrets.SLACK_CHANNEL_ID }}",
-  #             "text": "New RocksDB prebuild: v${{ needs.check.outputs.version }}",
-  #             "blocks": [
-  #               {
-  #                 "type": "header",
-  #                 "text": {
-  #                   "type": "plain_text",
-  #                   "text": "New RocksDB prebuild: v${{ needs.check.outputs.version }}"
-  #                 }
-  #               },
-  #               {
-  #                 "type": "section",
-  #                 "text": {
-  #                   "type": "mrkdwn",
-  #                   "text": "https://github.com/harperdb/rocksdb-prebuilds/releases/tag/v${{ needs.check.outputs.version }}"
-  #                 }
-  #               }
-  #             ]
-  #           }
+      - name: Send Slack notification
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            {
+              "channel": "${{ secrets.SLACK_CHANNEL_ID }}",
+              "text": "New RocksDB prebuild: v${{ needs.check.outputs.version }}",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "New RocksDB prebuild: v${{ needs.check.outputs.version }}"
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "https://github.com/harperdb/rocksdb-prebuilds/releases/tag/v${{ needs.check.outputs.version }}"
+                  }
+                }
+              ]
+            }
 
-  #     - name: Repository Dispatch
-  #       uses: peter-evans/repository-dispatch@v3
-  #       with:
-  #         event-type: new-rocksdb-prebuild
-  #         repository: harperdb/rocksdb-js
-  #         token: ${{ secrets.GH_TOKEN }}
-  #         client-payload: |
-  #           {
-  #             "url": "https://github.com/harperdb/rocksdb-prebuilds/releases/tag/v${{ needs.check.outputs.version }}",
-  #             "version": "${{ needs.check.outputs.version }}"
-  #           }
+      - name: Repository Dispatch
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          event-type: new-rocksdb-prebuild
+          repository: harperdb/rocksdb-js
+          token: ${{ secrets.GH_TOKEN }}
+          client-payload: |
+            {
+              "url": "https://github.com/harperdb/rocksdb-prebuilds/releases/tag/v${{ needs.check.outputs.version }}",
+              "version": "${{ needs.check.outputs.version }}"
+            }
