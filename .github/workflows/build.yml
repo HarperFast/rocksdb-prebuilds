@@ -74,6 +74,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install cmake 3.31.10 (windows)
+        if: ${{ matrix.platform.target == 'windows-x64' || matrix.platform.target == 'windows-arm64' }}
+        uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: 3.31.10
+
       - name: Build RocksDB (windows)
         if: ${{ matrix.platform.target == 'windows-x64' || matrix.platform.target == 'windows-arm64' }}
         env:
@@ -119,6 +125,9 @@ jobs:
 
           # -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
 
+          # install cmake 3.31.10
+
+
           cd build
           echo "Building RocksDB (release)..."
           cmake .. \
@@ -132,7 +141,8 @@ jobs:
             -DWITH_ZLIB=ON \
             -DWITH_ZSTD=ON \
             -DROCKSDB_BUILD_SHARED=OFF \
-            -DWITH_GFLAGS=OFF
+            -DWITH_GFLAGS=OFF \
+            -DBUILD_TESTING=OFF
           cmake --build . --config Release
           cp Release/rocksdb.lib ../dist/lib/
 
@@ -149,7 +159,8 @@ jobs:
             -DWITH_ZLIB=ON \
             -DWITH_ZSTD=ON \
             -DROCKSDB_BUILD_SHARED=OFF \
-            -DWITH_GFLAGS=OFF
+            -DWITH_GFLAGS=OFF \
+            -DBUILD_TESTING=OFF
           cmake --build . --config Debug
           ls -la build/Debug
           cp build/Debug/rocksdb.lib dist/lib/rocksdbd.lib
