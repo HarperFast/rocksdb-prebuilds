@@ -140,8 +140,9 @@ jobs:
             -DWITH_ZSTD=ON \
             -DROCKSDB_BUILD_SHARED=OFF \
             -DWITH_GFLAGS=OFF \
+            -DWITH_TESTS=OFF \
             -DBUILD_TESTING=OFF
-          cmake --build . --config Release
+          cmake --build . --config Release --target rocksdb
           cp Release/rocksdb.lib ../dist/lib/
 
           echo "Building RocksDB (debug)..."
@@ -158,8 +159,9 @@ jobs:
             -DWITH_ZSTD=ON \
             -DROCKSDB_BUILD_SHARED=OFF \
             -DWITH_GFLAGS=OFF \
+            -DWITH_TESTS=OFF \
             -DBUILD_TESTING=OFF
-          cmake --build . --config Debug
+          cmake --build . --config Debug --target rocksdb
           ls -la build/Debug
           cp build/Debug/rocksdb.lib dist/lib/rocksdbd.lib
           cd ..
