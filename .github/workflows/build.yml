@@ -203,6 +203,11 @@ jobs:
 
           tar -xzf rocksdb.tar.gz
           cd rocksdb-${{ needs.check.outputs.version }}
+          patch -p1 < "${{ github.workspace }}/patches/0001-fix-dependencies.patch"
+          patch -p1 < "${{ github.workspace }}/patches/0002-fix-android.patch"
+          patch -p1 < "${{ github.workspace }}/patches/0003-include_cstdint.patch"
+          patch -p1 < "${{ github.workspace }}/patches/0004-support-apple.patch"
+
           mkdir build
           cd build
 
@@ -210,6 +215,7 @@ jobs:
           cmake .. \
             -DFAIL_ON_WARNINGS=OFF \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_DISABLE_FIND_PACKAGE_Git=TRUE \
             -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
             -DPORTABLE=ON \
             -DROCKSDB_BUILD_SHARED=OFF \
