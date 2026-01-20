@@ -221,7 +221,7 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
             -DPORTABLE=ON \
             -DROCKSDB_BUILD_SHARED=OFF \
-            -DUSE_RTTI=OFF \
+            -DUSE_RTTI=ON \
             -DWITH_BENCHMARK_TOOLS=OFF \
             -DWITH_GFLAGS=OFF \
             -DWITH_LIBURING=OFF \
