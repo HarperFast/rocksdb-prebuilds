@@ -224,7 +224,7 @@ jobs:
             -DUSE_RTTI=ON \
             -DWITH_RUNTIME_DEBUG=OFF \
             -DVCPKG_TARGET_TRIPLET="$VCPKG_TRIPLET"
-          cmake --build . --config Release
+          cmake --build . --config Release --target rocksdb
           cd ..
 
           echo "Copying files to dist..."
@@ -282,7 +282,7 @@ jobs:
               -DUSE_RTTI=ON \
               -DFAIL_ON_WARNINGS=OFF \
               -DWITH_RUNTIME_DEBUG=OFF
-          cmake --build . --config Release
+          cmake --build . --config Release --target rocksdb
           cd ..
 
           echo "Copying files to dist..."
@@ -341,12 +341,19 @@ jobs:
                 -DWITH_ZLIB=ON \
                 -DWITH_ZSTD=ON \
                 -DROCKSDB_BUILD_SHARED=OFF \
-                -DWITH_GFLAGS=OFF
-              cmake --build . --config Release
+                -DWITH_GFLAGS=OFF \
+                -DWITH_TESTS=OFF \
+                -DWITH_BENCHMARK_TOOLS=OFF \
+                -DWITH_TOOLS=OFF \
+                -DUSE_RTTI=ON \
+                -DFAIL_ON_WARNINGS=OFF \
+                -DWITH_RUNTIME_DEBUG=OFF
+              cmake --build . --config Release --target rocksdb
               cd ..
 
               echo 'Copying files to dist...'
-              mkdir -p include dist/lib
+              mkdir -p dist/include
+              mkdir -p dist/lib
               mv include/rocksdb dist/include/
               mv build/librocksdb.a dist/lib/
 
