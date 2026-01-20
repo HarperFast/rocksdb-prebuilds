@@ -194,6 +194,8 @@ jobs:
 
           # Install compression libraries
           export VCPKG_LIBRARY_LINKAGE=static
+          export CXXFLAGS="-fno-rtti"
+          export VCPKG_CXX_FLAGS="-fno-rtti"
           $VCPKG_ROOT/vcpkg install snappy lz4 zlib zstd --triplet "$VCPKG_TRIPLET"
 
           # Download RocksDB
@@ -219,7 +221,7 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
             -DPORTABLE=ON \
             -DROCKSDB_BUILD_SHARED=OFF \
-            -DUSE_RTTI=ON \
+            -DUSE_RTTI=OFF \
             -DWITH_BENCHMARK_TOOLS=OFF \
             -DWITH_GFLAGS=OFF \
             -DWITH_LIBURING=OFF \
