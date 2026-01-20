@@ -143,7 +143,7 @@ jobs:
             -DWITH_TESTS=OFF \
             -DBUILD_TESTING=OFF
           cmake --build . --config Release --target rocksdb
-          cp Release/rocksdb.lib ../dist/lib/
+          mv Release/rocksdb.lib ../dist/lib/
 
           # echo "Building RocksDB (debug)..."
           # cmake .. \
@@ -162,7 +162,7 @@ jobs:
           #   -DWITH_TESTS=OFF \
           #   -DBUILD_TESTING=OFF
           # cmake --build . --config Debug --target rocksdb
-          # cp Debug/rocksdb.lib ../dist/lib/rocksdbd.lib
+          # mv Debug/rocksdb.lib ../dist/lib/rocksdbd.lib
           cd ..
 
           mv include/rocksdb dist/include/
@@ -211,7 +211,6 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_TARGET_TRIPLET="$VCPKG_TRIPLET" \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_CXX_STANDARD_LIBRARIES="-lsnappy" \
             -DPORTABLE=ON \
             -DWITH_SNAPPY=ON \
             -DWITH_LZ4=ON \
@@ -226,7 +225,7 @@ jobs:
           mkdir -p dist/include
           mkdir -p dist/lib
           mv include/rocksdb dist/include/
-          [ -f build/librocksdb.a ] && cp build/librocksdb.a dist/lib/
+          mv build/librocksdb.a dist/lib/
 
           echo "Creating archive..."
           ARCHIVE="${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz"
@@ -278,7 +277,7 @@ jobs:
           mkdir -p dist/include
           mkdir -p dist/lib
           mv include/rocksdb dist/include/
-          [ -f build/librocksdb.a ] && cp build/librocksdb.a dist/lib/
+          mv build/librocksdb.a dist/lib/
 
           echo "Creating archive..."
           ARCHIVE="${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz"
