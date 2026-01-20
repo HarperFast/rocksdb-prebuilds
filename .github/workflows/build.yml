@@ -197,7 +197,6 @@ jobs:
           export CXXFLAGS="-fno-rtti"
           export VCPKG_CXX_FLAGS="-fno-rtti"
           $VCPKG_ROOT/vcpkg install snappy lz4 zlib zstd --triplet "$VCPKG_TRIPLET"
-          unset CXXFLAGS
 
           # Download RocksDB
           URL="https://github.com/facebook/rocksdb/archive/refs/tags/v${{ needs.check.outputs.version }}.tar.gz"
