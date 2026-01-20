@@ -208,16 +208,22 @@ jobs:
 
           echo "Building RocksDB..."
           cmake .. \
-            -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
-            -DVCPKG_TARGET_TRIPLET="$VCPKG_TRIPLET" \
+            -DFAIL_ON_WARNINGS=OFF \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
             -DPORTABLE=ON \
+            -DROCKSDB_BUILD_SHARED=OFF \
             -DWITH_SNAPPY=ON \
             -DWITH_LZ4=ON \
             -DWITH_ZLIB=ON \
             -DWITH_ZSTD=ON \
-            -DROCKSDB_BUILD_SHARED=OFF \
-            -DWITH_GFLAGS=OFF
+            -DWITH_GFLAGS=OFF \
+            -DWITH_TESTS=OFF \
+            -DWITH_BENCHMARK_TOOLS=OFF \
+            -DWITH_TOOLS=OFF \
+            -DUSE_RTTI=ON \
+            -DWITH_RUNTIME_DEBUG=OFF \
+            -DVCPKG_TARGET_TRIPLET="$VCPKG_TRIPLET"
           cmake --build . --config Release
           cd ..
 
@@ -269,7 +275,13 @@ jobs:
               -DWITH_ZLIB=ON \
               -DWITH_ZSTD=ON \
               -DROCKSDB_BUILD_SHARED=OFF \
-              -DWITH_GFLAGS=OFF
+              -DWITH_GFLAGS=OFF \
+              -DWITH_TESTS=OFF \
+              -DWITH_BENCHMARK_TOOLS=OFF \
+              -DWITH_TOOLS=OFF \
+              -DUSE_RTTI=ON \
+              -DFAIL_ON_WARNINGS=OFF \
+              -DWITH_RUNTIME_DEBUG=OFF
           cmake --build . --config Release
           cd ..
 
