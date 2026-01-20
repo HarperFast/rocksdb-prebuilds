@@ -238,7 +238,23 @@ jobs:
           mkdir -p dist/include
           mkdir -p dist/lib
           mv include/rocksdb dist/include/
-          mv build/librocksdb.a dist/lib/
+
+          # Create a combined static library with all dependencies
+          echo "Creating combined static library with all dependencies..."
+          VCPKG_LIB_DIR="$VCPKG_ROOT/installed/$VCPKG_TRIPLET/lib"
+
+          # Use libtool on macOS to combine static libraries
+          libtool -static -o dist/lib/librocksdb.a \
+            build/librocksdb.a \
+            "$VCPKG_LIB_DIR/libsnappy.a" \
+            "$VCPKG_LIB_DIR/liblz4.a" \
+            "$VCPKG_LIB_DIR/libz.a" \
+            "$VCPKG_LIB_DIR/libzstd.a"
+
+          # Verify the combined library
+          echo "Library size: $(du -h dist/lib/librocksdb.a | cut -f1)"
+          echo "Verifying snappy symbols are present..."
+          nm dist/lib/librocksdb.a | grep -c snappy || echo "Warning: snappy symbols not found"
 
           echo "Creating archive..."
           ARCHIVE="${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz"
