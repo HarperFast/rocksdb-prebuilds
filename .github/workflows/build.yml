@@ -239,6 +239,7 @@ jobs:
           mkdir -p dist/include
           mkdir -p dist/lib
           mv include/rocksdb dist/include/
+          mv build/librocksdb.a dist/lib/
 
           echo "Creating archive..."
           ARCHIVE="${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz"
