@@ -53,20 +53,20 @@ jobs:
         platform:
           - runner: macos-latest
             target: darwin-arm64
-          - runner: macos-latest
-            target: darwin-x64
-          - runner: ubuntu-22.04
-            target: linux-x64-glibc
-          - runner: ubuntu-latest
-            target: linux-x64-musl
-          - runner: ubuntu-22.04-arm
-            target: linux-arm64-glibc
-          - runner: ubuntu-24.04-arm
-            target: linux-arm64-musl
-          - runner: windows-latest
-            target: windows-x64
-          - runner: windows-latest
-            target: windows-arm64
+          # - runner: macos-latest
+          #   target: darwin-x64
+          # - runner: ubuntu-22.04
+          #   target: linux-x64-glibc
+          # - runner: ubuntu-latest
+          #   target: linux-x64-musl
+          # - runner: ubuntu-22.04-arm
+          #   target: linux-arm64-glibc
+          # - runner: ubuntu-24.04-arm
+          #   target: linux-arm64-musl
+          # - runner: windows-latest
+          #   target: windows-x64
+          # - runner: windows-latest
+          #   target: windows-arm64
     runs-on: ${{ matrix.platform.runner }}
     env:
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
@@ -173,8 +173,8 @@ jobs:
           tar -cf - . | xz -9 > "$ARCHIVE"
           echo "Archive created: $ARCHIVE"
 
-      - name: Build RocksDB (linux glibc/macos)
-        if: ${{ matrix.platform.target != 'linux-x64-musl' && matrix.platform.target != 'linux-arm64-musl' && matrix.platform.target != 'windows-x64' && matrix.platform.target != 'windows-arm64' }}
+      - name: Build RocksDB (macos)
+        if: ${{ matrix.platform.target == 'darwin-arm64' || matrix.platform.target == 'darwin-x64' }}
         env:
           VCPKG_ROOT: ${{ github.workspace }}/vcpkg
         shell: bash
@@ -183,10 +183,16 @@ jobs:
           git clone https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
           $VCPKG_ROOT/bootstrap-vcpkg.sh
 
-          echo "VCPKG_ROOT: $VCPKG_ROOT"
+          if [[ "${{ matrix.platform.target }}" == "darwin-arm64" ]]; then
+            VCPKG_TRIPLET="arm64-osx-static"
+          else
+            VCPKG_TRIPLET="x64-osx-static"
+          fi
 
-          # Install compression libraries
-          $VCPKG_ROOT/vcpkg install snappy lz4 zlib zstd
+          echo "VCPKG_ROOT: $VCPKG_ROOT"
+          echo "VCPKG_TRIPLET: $VCPKG_TRIPLET"
+
+          $VCPKG_ROOT/vcpkg install snappy lz4 zlib zstd --triplet "$VCPKG_TRIPLET"
 
           # Download RocksDB
           URL="https://github.com/facebook/rocksdb/archive/refs/tags/v${{ needs.check.outputs.version }}.tar.gz"
@@ -201,6 +207,7 @@ jobs:
           echo "Building RocksDB..."
           cmake .. \
             -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_TARGET_TRIPLET="$VCPKG_TRIPLET" \
             -DCMAKE_BUILD_TYPE=Release \
             -DPORTABLE=ON \
             -DWITH_SNAPPY=ON \
@@ -209,6 +216,57 @@ jobs:
             -DWITH_ZSTD=ON \
             -DROCKSDB_BUILD_SHARED=OFF \
             -DWITH_GFLAGS=OFF
+          cmake --build . --config Release
+          cd ..
+
+          echo "Copying files to dist..."
+          mkdir -p dist/include
+          mkdir -p dist/lib
+          mv include/rocksdb dist/include/
+          [ -f build/librocksdb.a ] && cp build/librocksdb.a dist/lib/
+
+          echo "Creating archive..."
+          ARCHIVE="${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz"
+          cd dist
+          tar -cf - . | xz -9 > "$ARCHIVE"
+          echo "Archive created: $ARCHIVE"
+
+      - name: Build RocksDB (linux glibc)
+        if: ${{ matrix.platform.target == 'linux-x64-glibc' || matrix.platform.target == 'linux-arm64-glibc' }}
+        env:
+          VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+        shell: bash
+        run: |
+          # Install vcpkg
+          git clone https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
+          $VCPKG_ROOT/bootstrap-vcpkg.sh
+
+          echo "VCPKG_ROOT: $VCPKG_ROOT"
+
+          # Install compression libraries
+          $VCPKG_ROOT/vcpkg install snappy lz4 zlib zstd --triplet "$VCPKG_TRIPLET"
+
+          # Download RocksDB
+          URL="https://github.com/facebook/rocksdb/archive/refs/tags/v${{ needs.check.outputs.version }}.tar.gz"
+          echo "Downloading: $URL"
+          curl -L -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -o rocksdb.tar.gz "$URL"
+
+          tar -xzf rocksdb.tar.gz
+          cd rocksdb-${{ needs.check.outputs.version }}
+          mkdir build
+          cd build
+
+          echo "Building RocksDB..."
+          cmake .. \
+              -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DPORTABLE=ON \
+              -DWITH_SNAPPY=ON \
+              -DWITH_LZ4=ON \
+              -DWITH_ZLIB=ON \
+              -DWITH_ZSTD=ON \
+              -DROCKSDB_BUILD_SHARED=OFF \
+              -DWITH_GFLAGS=OFF
           cmake --build . --config Release
           cd ..
 
@@ -290,77 +348,78 @@ jobs:
           name: rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}
           path: rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz
 
-  release:
-    name: Release
-    needs: [check, build]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+  # release:
+  #   name: Release
+  #   needs: [check, build]
+  #   if: ${{ needs.check.outputs.should_build == 'true' }}
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v4
 
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
+  #     - name: Download all artifacts
+  #       uses: actions/download-artifact@v4
+  #       with:
+  #         path: artifacts
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-2
+  #     - name: Configure AWS credentials
+  #       uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  #         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  #         aws-region: us-east-2
 
-      - name: Upload artifacts to S3
-        run: |
-          aws s3 cp artifacts/ s3://harper-artifacts/rocksdb-prebuilds/v${{ needs.check.outputs.version }}/ --recursive
+  #     - name: Upload artifacts to S3
+  #       run: |
+  #         aws s3 cp artifacts/ s3://harper-artifacts/rocksdb-prebuilds/v${{ needs.check.outputs.version }}/ --recursive
 
-      - name: Create release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: artifacts/**/*.tar.xz
-          body: |
-            Automated prebuilds for RocksDB v${{ needs.check.outputs.version }}
+  #     - name: Create release
+  #       uses: softprops/action-gh-release@v2
+  #       with:
+  #         files: artifacts/**/*.tar.xz
+  #         body: |
+  #           Automated prebuilds for RocksDB v${{ needs.check.outputs.version }}
 
-            Release notes: https://github.com/facebook/rocksdb/releases/tag/v${{ needs.check.outputs.version }}
-          name: RocksDB v${{ needs.check.outputs.version }}
-          tag_name: v${{ needs.check.outputs.version }}
-          token: ${{ secrets.GH_TOKEN }}
+  #           Release notes: https://github.com/facebook/rocksdb/releases/tag/v${{ needs.check.outputs.version }}
+  #         name: RocksDB v${{ needs.check.outputs.version }}
+  #         tag_name: v${{ needs.check.outputs.version }}
+  #         token: ${{ secrets.GH_TOKEN }}
 
-      - name: Send Slack notification
-        uses: slackapi/slack-github-action@v2.0.0
-        with:
-          method: chat.postMessage
-          token: ${{ secrets.SLACK_BOT_TOKEN }}
-          payload: |
-            {
-              "channel": "${{ secrets.SLACK_CHANNEL_ID }}",
-              "text": "New RocksDB prebuild: v${{ needs.check.outputs.version }}",
-              "blocks": [
-                {
-                  "type": "header",
-                  "text": {
-                    "type": "plain_text",
-                    "text": "New RocksDB prebuild: v${{ needs.check.outputs.version }}"
-                  }
-                },
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "https://github.com/harperdb/rocksdb-prebuilds/releases/tag/v${{ needs.check.outputs.version }}"
-                  }
-                }
-              ]
-            }
+  #     - name: Send Slack notification
+  #       uses: slackapi/slack-github-action@v2.0.0
+  #       with:
+  #         method: chat.postMessage
+  #         token: ${{ secrets.SLACK_BOT_TOKEN }}
+  #         payload: |
+  #           {
+  #             "channel": "${{ secrets.SLACK_CHANNEL_ID }}",
+  #             "text": "New RocksDB prebuild: v${{ needs.check.outputs.version }}",
+  #             "blocks": [
+  #               {
+  #                 "type": "header",
+  #                 "text": {
+  #                   "type": "plain_text",
+  #                   "text": "New RocksDB prebuild: v${{ needs.check.outputs.version }}"
+  #                 }
+  #               },
+  #               {
+  #                 "type": "section",
+  #                 "text": {
+  #                   "type": "mrkdwn",
+  #                   "text": "https://github.com/harperdb/rocksdb-prebuilds/releases/tag/v${{ needs.check.outputs.version }}"
+  #                 }
+  #               }
+  #             ]
+  #           }
 
-      - name: Repository Dispatch
-        uses: peter-evans/repository-dispatch@v3
-        with:
-          event-type: new-rocksdb-prebuild
-          repository: harperdb/rocksdb-js
-          token: ${{ secrets.GH_TOKEN }}
-          client-payload: |
-            {
-              "url": "https://github.com/harperdb/rocksdb-prebuilds/releases/tag/v${{ needs.check.outputs.version }}",
-              "version": "${{ needs.check.outputs.version }}"
-            }
+  #     - name: Repository Dispatch
+  #       uses: peter-evans/repository-dispatch@v3
+  #       with:
+  #         event-type: new-rocksdb-prebuild
+  #         repository: harperdb/rocksdb-js
+  #         token: ${{ secrets.GH_TOKEN }}
+  #         client-payload: |
+  #           {
+  #             "url": "https://github.com/harperdb/rocksdb-prebuilds/releases/tag/v${{ needs.check.outputs.version }}",
+  #             "version": "${{ needs.check.outputs.version }}"
+  #           }
