@@ -183,16 +183,11 @@ jobs:
           git clone https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
           $VCPKG_ROOT/bootstrap-vcpkg.sh
 
-          if [[ "${{ matrix.platform.target }}" == "darwin-arm64" ]]; then
-            VCPKG_TRIPLET="arm64-osx-static"
-          else
-            VCPKG_TRIPLET="x64-osx-static"
-          fi
-
           echo "VCPKG_ROOT: $VCPKG_ROOT"
-          echo "VCPKG_TRIPLET: $VCPKG_TRIPLET"
 
-          $VCPKG_ROOT/vcpkg install snappy lz4 zlib zstd --triplet "$VCPKG_TRIPLET"
+          # Install compression libraries
+          export VCPKG_LIBRARY_LINKAGE=static
+          $VCPKG_ROOT/vcpkg install snappy lz4 zlib zstd
 
           # Download RocksDB
           URL="https://github.com/facebook/rocksdb/archive/refs/tags/v${{ needs.check.outputs.version }}.tar.gz"
@@ -244,7 +239,8 @@ jobs:
           echo "VCPKG_ROOT: $VCPKG_ROOT"
 
           # Install compression libraries
-          $VCPKG_ROOT/vcpkg install snappy lz4 zlib zstd --triplet "$VCPKG_TRIPLET"
+          export VCPKG_LIBRARY_LINKAGE=static
+          $VCPKG_ROOT/vcpkg install snappy lz4 zlib zstd
 
           # Download RocksDB
           URL="https://github.com/facebook/rocksdb/archive/refs/tags/v${{ needs.check.outputs.version }}.tar.gz"
