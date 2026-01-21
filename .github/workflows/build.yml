@@ -51,12 +51,12 @@ jobs:
       fail-fast: false
       matrix:
         platform:
-          - runner: macos-latest
-            target: darwin-arm64
+          # - runner: macos-latest
+          #   target: darwin-arm64
           # - runner: macos-latest
           #   target: darwin-x64
-          # - runner: ubuntu-22.04
-          #   target: linux-x64-glibc
+          - runner: ubuntu-22.04
+            target: linux-x64-glibc
           # - runner: ubuntu-latest
           #   target: linux-x64-musl
           # - runner: ubuntu-22.04-arm
