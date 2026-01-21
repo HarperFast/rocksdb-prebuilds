@@ -60,15 +60,15 @@ jobs:
           - runner: ubuntu-22.04
             target: linux-x64-glibc
             triplet: x64-linux
-          - runner: ubuntu-latest
-            target: linux-x64-musl
-            triplet: x64-linux
           - runner: ubuntu-22.04-arm
             target: linux-arm64-glibc
             triplet: arm64-linux
+          - runner: ubuntu-latest
+            target: linux-x64-musl
+            triplet: x64-linux-musl
           - runner: ubuntu-24.04-arm
             target: linux-arm64-musl
-            triplet: arm64-linux
+            triplet: arm64-linux-musl
           - runner: windows-latest
             target: windows-x64
             triplet: x64-windows
@@ -266,7 +266,7 @@ jobs:
               echo 'Installing vcpkg...'
               git clone https://github.com/microsoft/vcpkg /workspace/vcpkg-musl
               cd /workspace/vcpkg-musl
-              ./bootstrap-vcpkg.sh
+              ./bootstrap-vcpkg.sh -musl
 
               echo 'Installing dependencies with vcpkg...'
               export VCPKG_FORCE_SYSTEM_BINARIES=1
