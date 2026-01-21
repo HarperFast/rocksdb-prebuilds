@@ -96,9 +96,11 @@ jobs:
           tar -xzf rocksdb.tar.gz
           cp windows/thirdparty.inc rocksdb-${{ needs.check.outputs.version }}/
           cd rocksdb-${{ needs.check.outputs.version }}
-          for patch in "${{ github.workspace }}/patches/*.patch"; do
-            echo "Applying patch: $patch"
-            patch -p1 < "$patch"
+          for patch in "${{ github.workspace }}/patches"/*.patch; do
+            if [ -f "$patch" ]; then
+              echo "Applying patch: $patch"
+              patch -p1 < "$patch"
+            fi
           done
           mkdir build
           mkdir -p dist/include
