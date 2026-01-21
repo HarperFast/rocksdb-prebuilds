@@ -252,19 +252,31 @@ jobs:
                 git \
                 linux-headers \
                 musl-dev \
-                zlib-dev \
-                snappy-dev \
-                lz4-dev \
-                zstd-dev \
+                bash \
+                zip \
+                unzip \
+                tar \
+                perl \
+                pkgconf \
                 xz
 
-              cd rocksdb-${{ needs.check.outputs.version }}/build
+              echo 'Installing vcpkg...'
+              git clone https://github.com/microsoft/vcpkg /workspace/vcpkg-musl
+              cd /workspace/vcpkg-musl
+              ./bootstrap-vcpkg.sh
+
+              echo 'Installing dependencies with vcpkg...'
+              export VCPKG_FORCE_SYSTEM_BINARIES=1
+              ./vcpkg install snappy lz4 zlib zstd liburing --triplet ${{ matrix.platform.triplet }}
+
+              cd /workspace/rocksdb-${{ needs.check.outputs.version }}/build
 
               echo 'Building RocksDB...'
               cmake .. \
                 -DFAIL_ON_WARNINGS=OFF \
                 -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_DISABLE_FIND_PACKAGE_Git=TRUE \
+                -DCMAKE_TOOLCHAIN_FILE=/workspace/vcpkg-musl/scripts/buildsystems/vcpkg.cmake \
                 -DPORTABLE=ON \
                 -DROCKSDB_BUILD_SHARED=OFF \
                 -DUSE_RTTI=ON \
@@ -277,7 +289,8 @@ jobs:
                 -DWITH_TOOLS=OFF \
                 -DWITH_ZLIB=ON \
                 -DWITH_ZSTD=ON \
-                -DWITH_RUNTIME_DEBUG=OFF
+                -DWITH_RUNTIME_DEBUG=OFF \
+                -DVCPKG_TARGET_TRIPLET=${{ matrix.platform.triplet }}
               cmake --build . --config Release --target rocksdb
 
               mv build/librocksdb.a dist/lib/
