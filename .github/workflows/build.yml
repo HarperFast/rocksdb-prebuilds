@@ -124,10 +124,10 @@ jobs:
               CMAKE_ARCH="x64"
             fi
             $VCPKG_ROOT/bootstrap-vcpkg.bat
-            "$VCPKG_ROOT/vcpkg.exe" install snappy lz4 zlib zstd --triplet "$VCPKG_TRIPLET" --host-triplet "$VCPKG_TRIPLET"
+            "$VCPKG_ROOT/vcpkg.exe" install snappy lz4 zlib zstd --triplet "${{ matrix.platform.triplet }}" --host-triplet "${{ matrix.platform.triplet }}"
           else
             $VCPKG_ROOT/bootstrap-vcpkg.sh
-            $VCPKG_ROOT/vcpkg install snappy lz4 zlib zstd
+            $VCPKG_ROOT/vcpkg install snappy lz4 zlib zstd --triplet "${{ matrix.platform.triplet }}"
           fi
 
       - name: Build RocksDB (windows)
@@ -241,8 +241,6 @@ jobs:
         run: |
           # Build inside Alpine Docker container (musl)
           docker run --rm \
-            -e VCPKG_ROOT="${{ env.VCPKG_ROOT }}" \
-            -e VCPKG_TRIPLET="${{ matrix.platform.triplet }}" \
             -v "${{ github.workspace }}:/workspace" \
             -w /workspace \
             alpine:latest \
@@ -267,7 +265,6 @@ jobs:
                 -DFAIL_ON_WARNINGS=OFF \
                 -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_DISABLE_FIND_PACKAGE_Git=TRUE \
-                -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
                 -DPORTABLE=ON \
                 -DROCKSDB_BUILD_SHARED=OFF \
                 -DUSE_RTTI=ON \
@@ -280,19 +277,9 @@ jobs:
                 -DWITH_TOOLS=OFF \
                 -DWITH_ZLIB=ON \
                 -DWITH_ZSTD=ON \
-                -DWITH_RUNTIME_DEBUG=OFF \
-                -DVCPKG_TARGET_TRIPLET="$VCPKG_TRIPLET"
+                -DWITH_RUNTIME_DEBUG=OFF
               cmake --build . --config Release --target rocksdb
-              cd ..
 
-              # echo "Creating combined static library..."
-              VCPKG_LIB_DIR="$VCPKG_ROOT/installed/$VCPKG_TRIPLET/lib"
-              libtool -static -o dist/lib/librocksdb.a \
-                build/librocksdb.a \
-                "$VCPKG_LIB_DIR/libsnappy.a" \
-                "$VCPKG_LIB_DIR/liblz4.a" \
-                "$VCPKG_LIB_DIR/libz.a" \
-                "$VCPKG_LIB_DIR/libzstd.a"
               mv build/librocksdb.a dist/lib/
             "
 
