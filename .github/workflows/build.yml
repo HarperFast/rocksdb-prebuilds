@@ -242,8 +242,8 @@ jobs:
           mkdir -p dist/lib
           mv include/rocksdb dist/include/
 
-          # Use libtool on macOS to combine static libraries
-          echo "Creating combined static library..."
+          # echo "Creating combined static library..."
+          VCPKG_LIB_DIR="$VCPKG_ROOT/installed/$VCPKG_TRIPLET/lib"
           libtool -static -o dist/lib/librocksdb.a \
             build/librocksdb.a \
             "$VCPKG_LIB_DIR/libsnappy.a" \
