@@ -109,6 +109,7 @@ jobs:
           cd ..
 
       - name: Install vcpkg and libraries
+        if: ${{ matrix.platform.target != 'linux-x64-musl' && matrix.platform.target != 'linux-arm64-musl' }}
         env:
           VCPKG_ROOT: ${{ github.workspace }}/vcpkg
         shell: bash
