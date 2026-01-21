@@ -115,8 +115,8 @@ jobs:
         run: |
           git clone https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
           export VCPKG_LIBRARY_LINKAGE=static
-          export CXXFLAGS="-fno-rtti"
-          export VCPKG_CXX_FLAGS="-fno-rtti"
+          # export CXXFLAGS="-fno-rtti"
+          # export VCPKG_CXX_FLAGS="-fno-rtti"
           if [ "${{ matrix.platform.target }}" == "windows-x64" || "${{ matrix.platform.target }}" == "windows-arm64" ]; then
             if [ "${{ matrix.platform.target }}" == "windows-arm64" ]; then
               CMAKE_ARCH="ARM64"
