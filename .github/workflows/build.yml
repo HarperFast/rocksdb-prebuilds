@@ -96,10 +96,10 @@ jobs:
           tar -xzf rocksdb.tar.gz
           cp windows/thirdparty.inc rocksdb-${{ needs.check.outputs.version }}/
           cd rocksdb-${{ needs.check.outputs.version }}
-          patch -p1 < "${{ github.workspace }}/patches/0001-fix-dependencies.patch"
-          patch -p1 < "${{ github.workspace }}/patches/0002-fix-android.patch"
-          patch -p1 < "${{ github.workspace }}/patches/0003-include_cstdint.patch"
-          patch -p1 < "${{ github.workspace }}/patches/0004-support-apple.patch"
+          for patch in "${{ github.workspace }}/patches/*.patch"; do
+            echo "Applying patch: $patch"
+            patch -p1 < "$patch"
+          done
           mkdir build
           mkdir -p dist/include
           cp -r include/rocksdb dist/include/
