@@ -268,6 +268,10 @@ jobs:
               cd /workspace/vcpkg-musl
               ./bootstrap-vcpkg.sh -musl
 
+              echo 'Setting up custom triplets...'
+              mkdir -p /workspace/vcpkg-musl/triplets/community
+              cp /workspace/triplets/*.cmake /workspace/vcpkg-musl/triplets/community/
+
               echo 'Installing dependencies with vcpkg...'
               export VCPKG_FORCE_SYSTEM_BINARIES=1
               ./vcpkg install snappy lz4 zlib zstd liburing --triplet ${{ matrix.platform.triplet }}
@@ -293,7 +297,8 @@ jobs:
                 -DWITH_ZLIB=ON \
                 -DWITH_ZSTD=ON \
                 -DWITH_RUNTIME_DEBUG=OFF \
-                -DVCPKG_TARGET_TRIPLET=${{ matrix.platform.triplet }}
+                -DVCPKG_TARGET_TRIPLET=${{ matrix.platform.triplet }} \
+                -DVCPKG_OVERLAY_TRIPLETS=/workspace/triplets
               cmake --build . --config Release --target rocksdb
 
               mv build/librocksdb.a dist/lib/
