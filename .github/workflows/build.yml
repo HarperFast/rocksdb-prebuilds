@@ -236,7 +236,7 @@ jobs:
             -DFAIL_ON_WARNINGS=OFF \
             -DPORTABLE=ON \
             -DROCKSDB_BUILD_SHARED=OFF \
-            -DUSE_RTTI=ON \
+            -DUSE_RTTI=OFF \
             -DWITH_BENCHMARK_TOOLS=OFF \
             -DWITH_GFLAGS=OFF \
             -DWITH_LIBURING="$WITH_LIBURING" \
@@ -345,21 +345,11 @@ jobs:
               mv librocksdb.a ../dist/lib/
             "
 
-      - name: Create archive
-        shell: bash
-        run: |
-          set -e
-          set -o pipefail
-          ARCHIVE="${GITHUB_WORKSPACE}/rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz"
-          cd "${GITHUB_WORKSPACE}/rocksdb-${{ needs.check.outputs.version }}/dist"
-          tar -cf - . | xz -9 > "$ARCHIVE"
-          echo "Archive created: $ARCHIVE"
-
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}
-          path: rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz
+          path: rocksdb-${{ needs.check.outputs.version }}/dist/
 
   # release:
   #   name: Release
