@@ -96,7 +96,7 @@ jobs:
           tar -xzf rocksdb.tar.gz
           cp windows/thirdparty.inc rocksdb-${{ needs.check.outputs.version }}/
           cd rocksdb-${{ needs.check.outputs.version }}
-          for patch in "${{ github.workspace }}/patches"/*.patch; do
+          for patch in "${GITHUB_WORKSPACE}/patches"/*.patch; do
             if [ -f "$patch" ]; then
               echo "Applying patch: $patch"
               patch -p1 < "$patch"
@@ -145,7 +145,7 @@ jobs:
           fi
 
           echo "Building RocksDB (release)..."
-          cd "${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}/build"
+          cd "${GITHUB_WORKSPACE}/rocksdb-${{ needs.check.outputs.version }}/build"
           # -DCMAKE_PREFIX_PATH="$VCPKG_ROOT/installed/$VCPKG_TRIPLET" \
           cmake .. \
             -A "$CMAKE_ARCH" \
@@ -210,7 +210,7 @@ jobs:
           fi
 
           echo "Building RocksDB..."
-          cd ${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}/build
+          cd "${GITHUB_WORKSPACE}/rocksdb-${{ needs.check.outputs.version }}/build"
           cmake .. \
             -DFAIL_ON_WARNINGS=OFF \
             -DCMAKE_BUILD_TYPE=Release \
@@ -279,6 +279,9 @@ jobs:
               echo 'Setting up custom triplets...'
               cp /workspace/triplets/*.cmake /workspace/vcpkg-musl/triplets/
 
+              echo 'Custom triplet contents:'
+              cat /workspace/vcpkg-musl/triplets/${{ matrix.platform.triplet }}.cmake
+
               echo 'Installing dependencies with vcpkg...'
               export VCPKG_LIBRARY_LINKAGE=static
               export VCPKG_FORCE_SYSTEM_BINARIES=1
@@ -286,14 +289,17 @@ jobs:
               ./vcpkg install snappy lz4 zlib zstd liburing --triplet ${{ matrix.platform.triplet }}
 
               echo 'Checking installed packages...'
-              ls -la /workspace/vcpkg-musl/installed/
-              ls -la /workspace/vcpkg-musl/installed/${{ matrix.platform.triplet }}/ || echo 'Triplet directory not found'
+              ls -laR /workspace/vcpkg-musl/installed/${{ matrix.platform.triplet }}/ || echo 'Triplet directory not found'
+
+              echo 'Looking for CMake config files:'
+              find /workspace/vcpkg-musl/installed/${{ matrix.platform.triplet }}/ -name '*Config.cmake' -o -name '*-config.cmake' || echo 'No config files found'
 
               cd /workspace/rocksdb-${{ needs.check.outputs.version }}/build
 
               echo 'Building RocksDB...'
               export VCPKG_ROOT=/workspace/vcpkg-musl
               cmake .. \
+                -DCMAKE_PREFIX_PATH=\"/workspace/vcpkg-musl/installed/${{ matrix.platform.triplet }}\" \
                 -DFAIL_ON_WARNINGS=OFF \
                 -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_DISABLE_FIND_PACKAGE_Git=TRUE \
@@ -314,14 +320,14 @@ jobs:
                 -DVCPKG_TARGET_TRIPLET=${{ matrix.platform.triplet }}
               cmake --build . --config Release --target rocksdb
 
-              mv build/librocksdb.a dist/lib/
+              mv librocksdb.a ../dist/lib/
             "
 
       - name: Create archive
         shell: bash
         run: |
-          ARCHIVE="${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz"
-          cd ${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}/dist
+          ARCHIVE="${GITHUB_WORKSPACE}/rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz"
+          cd "${GITHUB_WORKSPACE}/rocksdb-${{ needs.check.outputs.version }}/dist"
           tar -cf - . | xz -9 > "$ARCHIVE"
           echo "Archive created: $ARCHIVE"
 
