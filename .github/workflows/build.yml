@@ -228,10 +228,12 @@ jobs:
           echo "Building RocksDB..."
           cd "${GITHUB_WORKSPACE}/rocksdb-${{ needs.check.outputs.version }}/build"
           cmake .. \
-            -DFAIL_ON_WARNINGS=OFF \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_DISABLE_FIND_PACKAGE_Git=TRUE \
+            -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+            -DCMAKE_PREFIX_PATH="$VCPKG_ROOT/installed/$VCPKG_TRIPLET" \
             -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            -DFAIL_ON_WARNINGS=OFF \
             -DPORTABLE=ON \
             -DROCKSDB_BUILD_SHARED=OFF \
             -DUSE_RTTI=ON \
