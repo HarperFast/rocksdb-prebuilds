@@ -143,8 +143,9 @@ jobs:
           else
             CMAKE_ARCH="x64"
           fi
-          cd rocksdb-${{ needs.check.outputs.version }}/build
+
           echo "Building RocksDB (release)..."
+          cd ${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}/build
           # -DCMAKE_PREFIX_PATH="$VCPKG_ROOT/installed/$VCPKG_TRIPLET" \
           cmake .. \
             -A "$CMAKE_ARCH" \
@@ -167,7 +168,6 @@ jobs:
             -DWITH_RUNTIME_DEBUG=OFF \
             -DVCPKG_TARGET_TRIPLET="$VCPKG_TRIPLET"
           cmake --build . --config Release --target rocksdb
-          mv Release/rocksdb.lib ../dist/lib/
 
           # echo "Building RocksDB (debug)..."
           # cmake .. \
@@ -188,6 +188,13 @@ jobs:
           # cmake --build . --config Debug --target rocksdb
           # mv Debug/rocksdb.lib ../dist/lib/rocksdbd.lib
           cd ..
+
+          ls -la .
+          ls -la build/
+          ls -la build/Release/
+          ls -la dist/
+          mv build/Release/rocksdb.lib dist/lib/
+          ls -la dist/lib/
 
       - name: Build RocksDB (macos/linux glibc)
         if: ${{ matrix.platform.target == 'darwin-arm64' || matrix.platform.target == 'darwin-x64' || matrix.platform.target == 'linux-x64-glibc' || matrix.platform.target == 'linux-arm64-glibc' }}
