@@ -276,28 +276,25 @@ jobs:
               cd /workspace/vcpkg-musl
               ./bootstrap-vcpkg.sh
 
+              echo 'Checking if vcpkg was built:'
+              ls -la vcpkg || echo 'vcpkg executable not found!'
+              file vcpkg || echo 'Cannot determine file type'
+
               echo 'Setting up custom triplets...'
-              cp /workspace/triplets/*.cmake /workspace/vcpkg-musl/triplets/
+              cp /workspace/triplets/*.cmake ./triplets/
 
               echo 'Custom triplet contents:'
-              cat /workspace/vcpkg-musl/triplets/${{ matrix.platform.triplet }}.cmake
+              cat ./triplets/${{ matrix.platform.triplet }}.cmake
 
               echo 'Installing dependencies with vcpkg...'
               export VCPKG_LIBRARY_LINKAGE=static
               export VCPKG_FORCE_SYSTEM_BINARIES=1
               export VCPKG_ROOT=/workspace/vcpkg-musl
-              /workspace/vcpkg-musl/vcpkg install snappy lz4 zlib zstd liburing --triplet ${{ matrix.platform.triplet }}
-
-              echo 'Checking installed packages...'
-              ls -laR /workspace/vcpkg-musl/installed/${{ matrix.platform.triplet }}/ || echo 'Triplet directory not found'
-
-              echo 'Looking for CMake config files:'
-              find /workspace/vcpkg-musl/installed/${{ matrix.platform.triplet }}/ -name '*Config.cmake' -o -name '*-config.cmake' || echo 'No config files found'
+              ./vcpkg install snappy lz4 zlib zstd liburing --triplet ${{ matrix.platform.triplet }}
 
               cd /workspace/rocksdb-${{ needs.check.outputs.version }}/build
 
               echo 'Building RocksDB...'
-              export VCPKG_ROOT=/workspace/vcpkg-musl
               cmake .. \
                 -DFAIL_ON_WARNINGS=OFF \
                 -DCMAKE_BUILD_TYPE=Release \
