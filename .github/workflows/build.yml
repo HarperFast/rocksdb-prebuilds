@@ -118,7 +118,7 @@ jobs:
           export VCPKG_LIBRARY_LINKAGE=static
           # export CXXFLAGS="-fno-rtti"
           # export VCPKG_CXX_FLAGS="-fno-rtti"
-          if [ "${{ matrix.platform.target }}" == "windows-x64" || "${{ matrix.platform.target }}" == "windows-arm64" ]; then
+          if [[ "${{ matrix.platform.target }}" == "windows-x64" || "${{ matrix.platform.target }}" == "windows-arm64" ]]; then
             if [ "${{ matrix.platform.target }}" == "windows-arm64" ]; then
               CMAKE_ARCH="ARM64"
             else
@@ -203,7 +203,7 @@ jobs:
           VCPKG_TRIPLET: ${{ matrix.platform.triplet }}
         shell: bash
         run: |
-          if [ "${{ matrix.platform.target }}" == "linux-arm64-glibc" || "${{ matrix.platform.target }}" == "linux-x64-glibc" ]; then
+          if [[ "${{ matrix.platform.target }}" == "linux-arm64-glibc" || "${{ matrix.platform.target }}" == "linux-x64-glibc" ]]; then
             WITH_LIBURING="ON"
           else
             WITH_LIBURING="OFF"
@@ -233,7 +233,7 @@ jobs:
           cmake --build . --config Release --target rocksdb
           cd ..
 
-          if [ ${{ matrix.platform.target }} == 'darwin-arm64' || ${{ matrix.platform.target }} == 'darwin-x64' ]; then
+          if [[ "${{ matrix.platform.target }}" == "darwin-arm64" || "${{ matrix.platform.target }}" == "darwin-x64" ]]; then
             echo "Creating combined static library..."
             VCPKG_LIB_DIR="$VCPKG_ROOT/installed/$VCPKG_TRIPLET/lib"
             libtool -static -o dist/lib/librocksdb.a \
