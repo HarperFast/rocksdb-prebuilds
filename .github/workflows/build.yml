@@ -131,7 +131,12 @@ jobs:
             "$VCPKG_ROOT/vcpkg.exe" install snappy lz4 zlib zstd --triplet "${{ matrix.platform.triplet }}" --host-triplet "${{ matrix.platform.triplet }}"
           else
             $VCPKG_ROOT/bootstrap-vcpkg.sh
-            $VCPKG_ROOT/vcpkg install snappy lz4 zlib zstd --triplet "${{ matrix.platform.triplet }}"
+            # Install liburing only for Linux targets
+            if [[ "${{ matrix.platform.target }}" == "linux-x64-glibc" || "${{ matrix.platform.target }}" == "linux-arm64-glibc" ]]; then
+              $VCPKG_ROOT/vcpkg install snappy lz4 zlib zstd liburing --triplet "${{ matrix.platform.triplet }}"
+            else
+              $VCPKG_ROOT/vcpkg install snappy lz4 zlib zstd --triplet "${{ matrix.platform.triplet }}"
+            fi
           fi
 
       - name: Build RocksDB (windows)
