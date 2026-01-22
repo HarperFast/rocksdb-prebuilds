@@ -285,16 +285,18 @@ jobs:
                 tar \
                 perl \
                 pkgconf \
-                xz
+                xz \
+                ninja
 
               echo 'Installing vcpkg...'
+              export VCPKG_FORCE_SYSTEM_BINARIES=1
               git clone https://github.com/microsoft/vcpkg /workspace/vcpkg-musl
               cd /workspace/vcpkg-musl
-              ./bootstrap-vcpkg.sh
+              ./bootstrap-vcpkg.sh -useSystemBinaries
 
-              echo 'Checking if vcpkg was built:'
-              ls -la vcpkg || echo 'vcpkg executable not found!'
-              file vcpkg || echo 'Cannot determine file type'
+              echo 'Verifying vcpkg was built:'
+              ls -la vcpkg
+              file vcpkg
 
               echo 'Setting up custom triplets...'
               cp /workspace/triplets/*.cmake ./triplets/
@@ -304,7 +306,6 @@ jobs:
 
               echo 'Installing dependencies with vcpkg...'
               export VCPKG_LIBRARY_LINKAGE=static
-              export VCPKG_FORCE_SYSTEM_BINARIES=1
               export VCPKG_ROOT=/workspace/vcpkg-musl
               ./vcpkg install snappy lz4 zlib zstd liburing --triplet ${{ matrix.platform.triplet }}
 
