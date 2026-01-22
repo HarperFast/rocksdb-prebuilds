@@ -145,7 +145,7 @@ jobs:
           fi
 
           echo "Building RocksDB (release)..."
-          cd ${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}/build
+          cd "${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}/build"
           # -DCMAKE_PREFIX_PATH="$VCPKG_ROOT/installed/$VCPKG_TRIPLET" \
           cmake .. \
             -A "$CMAKE_ARCH" \
