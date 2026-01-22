@@ -53,10 +53,10 @@ jobs:
         platform:
           - runner: macos-latest
             target: darwin-arm64
-            triplet: arm64-osx
+            triplet: arm64-osx-static
           - runner: macos-latest
             target: darwin-x64
-            triplet: x64-osx
+            triplet: x64-osx-static
           - runner: ubuntu-22.04
             target: linux-x64-glibc
             triplet: x64-linux
@@ -115,9 +115,12 @@ jobs:
         shell: bash
         run: |
           git clone https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
-          export VCPKG_LIBRARY_LINKAGE=static
-          # export CXXFLAGS="-fno-rtti"
-          # export VCPKG_CXX_FLAGS="-fno-rtti"
+
+          # Copy custom triplets
+          if [[ "${{ matrix.platform.target }}" == "darwin-arm64" || "${{ matrix.platform.target }}" == "darwin-x64" ]]; then
+            cp "${GITHUB_WORKSPACE}/triplets/${{ matrix.platform.triplet }}.cmake" "$VCPKG_ROOT/triplets/"
+          fi
+
           if [[ "${{ matrix.platform.target }}" == "windows-x64" || "${{ matrix.platform.target }}" == "windows-arm64" ]]; then
             if [ "${{ matrix.platform.target }}" == "windows-arm64" ]; then
               CMAKE_ARCH="ARM64"
@@ -236,12 +239,25 @@ jobs:
           if [[ "${{ matrix.platform.target }}" == "darwin-arm64" || "${{ matrix.platform.target }}" == "darwin-x64" ]]; then
             echo "Creating combined static library..."
             VCPKG_LIB_DIR="$VCPKG_ROOT/installed/$VCPKG_TRIPLET/lib"
-            libtool -static -o dist/lib/librocksdb.a \
-              build/librocksdb.a \
-              "$VCPKG_LIB_DIR/libsnappy.a" \
-              "$VCPKG_LIB_DIR/liblz4.a" \
-              "$VCPKG_LIB_DIR/libz.a" \
-              "$VCPKG_LIB_DIR/libzstd.a"
+
+            # Create temp directory and extract all object files
+            MERGE_DIR="${GITHUB_WORKSPACE}/rocksdb-${{ needs.check.outputs.version }}/merge-temp"
+            mkdir -p "$MERGE_DIR"
+            cd "$MERGE_DIR"
+
+            # Extract object files from all static libraries
+            ar x ../build/librocksdb.a
+            ar x "$VCPKG_LIB_DIR/libsnappy.a"
+            ar x "$VCPKG_LIB_DIR/liblz4.a"
+            ar x "$VCPKG_LIB_DIR/libz.a"
+            ar x "$VCPKG_LIB_DIR/libzstd.a"
+
+            # Create combined archive
+            ar rcs ../dist/lib/librocksdb.a *.o
+
+            # Cleanup
+            cd ..
+            rm -rf "$MERGE_DIR"
           else
             mv build/librocksdb.a dist/lib/
           fi
