@@ -226,18 +226,18 @@ jobs:
           cmake --build . --config Release --target rocksdb
           cd ..
 
-          # if [ ${{ matrix.platform.target }} == 'darwin-arm64' || ${{ matrix.platform.target }} == 'darwin-x64' ]; then
-          #   echo "Creating combined static library..."
-          #   VCPKG_LIB_DIR="$VCPKG_ROOT/installed/$VCPKG_TRIPLET/lib"
-          #   libtool -static -o dist/lib/librocksdb.a \
-          #     build/librocksdb.a \
-          #     "$VCPKG_LIB_DIR/libsnappy.a" \
-          #     "$VCPKG_LIB_DIR/liblz4.a" \
-          #     "$VCPKG_LIB_DIR/libz.a" \
-          #     "$VCPKG_LIB_DIR/libzstd.a"
-          # else
-          mv build/librocksdb.a dist/lib/
-          # fi
+          if [ ${{ matrix.platform.target }} == 'darwin-arm64' || ${{ matrix.platform.target }} == 'darwin-x64' ]; then
+            echo "Creating combined static library..."
+            VCPKG_LIB_DIR="$VCPKG_ROOT/installed/$VCPKG_TRIPLET/lib"
+            libtool -static -o dist/lib/librocksdb.a \
+              build/librocksdb.a \
+              "$VCPKG_LIB_DIR/libsnappy.a" \
+              "$VCPKG_LIB_DIR/liblz4.a" \
+              "$VCPKG_LIB_DIR/libz.a" \
+              "$VCPKG_LIB_DIR/libzstd.a"
+          else
+            mv build/librocksdb.a dist/lib/
+          fi
 
       - name: Build RocksDB (linux musl)
         if: ${{ matrix.platform.target == 'linux-x64-musl' || matrix.platform.target == 'linux-arm64-musl' }}
