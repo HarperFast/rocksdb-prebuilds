@@ -90,6 +90,8 @@ jobs:
       - name: Download and patch RocksDB
         shell: bash
         run: |
+          set -e
+          set -o pipefail
           URL="https://github.com/facebook/rocksdb/archive/refs/tags/v${{ needs.check.outputs.version }}.tar.gz"
           echo "Downloading: $URL"
           curl -L -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -o rocksdb.tar.gz "$URL"
@@ -114,6 +116,8 @@ jobs:
           VCPKG_ROOT: ${{ github.workspace }}/vcpkg
         shell: bash
         run: |
+          set -e
+          set -o pipefail
           git clone https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
 
           # Copy custom triplets
@@ -146,6 +150,8 @@ jobs:
           VCPKG_TRIPLET: ${{ matrix.platform.triplet }}
         shell: bash
         run: |
+          set -e
+          set -o pipefail
           if [ "${{ matrix.platform.target }}" == "windows-arm64" ]; then
             CMAKE_ARCH="ARM64"
           else
@@ -211,6 +217,8 @@ jobs:
           VCPKG_TRIPLET: ${{ matrix.platform.triplet }}
         shell: bash
         run: |
+          set -e
+          set -o pipefail
           if [[ "${{ matrix.platform.target }}" == "linux-arm64-glibc" || "${{ matrix.platform.target }}" == "linux-x64-glibc" ]]; then
             WITH_LIBURING="ON"
           else
@@ -266,6 +274,8 @@ jobs:
         if: ${{ matrix.platform.target == 'linux-x64-musl' || matrix.platform.target == 'linux-arm64-musl' }}
         shell: bash
         run: |
+          set -e
+          set -o pipefail
           # Build inside Alpine Docker container (musl)
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
@@ -287,8 +297,7 @@ jobs:
                 pkgconf \
                 xz \
                 ninja \
-                liburing-dev \
-                liburing-static
+                liburing-dev
 
               echo 'Installing vcpkg...'
               export VCPKG_FORCE_SYSTEM_BINARIES=1
@@ -337,6 +346,8 @@ jobs:
       - name: Create archive
         shell: bash
         run: |
+          set -e
+          set -o pipefail
           ARCHIVE="${GITHUB_WORKSPACE}/rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz"
           cd "${GITHUB_WORKSPACE}/rocksdb-${{ needs.check.outputs.version }}/dist"
           tar -cf - . | xz -9 > "$ARCHIVE"
