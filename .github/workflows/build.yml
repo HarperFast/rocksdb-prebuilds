@@ -245,24 +245,19 @@ jobs:
             echo "Creating combined static library..."
             VCPKG_LIB_DIR="$VCPKG_ROOT/installed/$VCPKG_TRIPLET/lib"
 
-            # Create temp directory and extract all object files
-            MERGE_DIR="${GITHUB_WORKSPACE}/rocksdb-${{ needs.check.outputs.version }}/merge-temp"
-            mkdir -p "$MERGE_DIR"
-            cd "$MERGE_DIR"
+            echo "Verifying library architectures:"
+            lipo -info build/librocksdb.a
+            lipo -info "$VCPKG_LIB_DIR/libsnappy.a"
 
-            # Extract object files from all static libraries
-            ar x ../build/librocksdb.a
-            ar x "$VCPKG_LIB_DIR/libsnappy.a"
-            ar x "$VCPKG_LIB_DIR/liblz4.a"
-            ar x "$VCPKG_LIB_DIR/libz.a"
-            ar x "$VCPKG_LIB_DIR/libzstd.a"
+            libtool -static -o dist/lib/librocksdb.a \
+              build/librocksdb.a \
+              "$VCPKG_LIB_DIR/libsnappy.a" \
+              "$VCPKG_LIB_DIR/liblz4.a" \
+              "$VCPKG_LIB_DIR/libz.a" \
+              "$VCPKG_LIB_DIR/libzstd.a"
 
-            # Create combined archive
-            ar rcs ../dist/lib/librocksdb.a *.o
-
-            # Cleanup
-            cd ..
-            rm -rf "$MERGE_DIR"
+            echo "Verifying combined library:"
+            nm -gU dist/lib/librocksdb.a | grep -i snappy | head -10
           else
             mv build/librocksdb.a dist/lib/
           fi
@@ -291,17 +286,15 @@ jobs:
                 perl \
                 pkgconf \
                 xz \
-                ninja
+                ninja \
+                liburing-dev \
+                liburing-static
 
               echo 'Installing vcpkg...'
               export VCPKG_FORCE_SYSTEM_BINARIES=1
               git clone https://github.com/microsoft/vcpkg /workspace/vcpkg-musl
               cd /workspace/vcpkg-musl
               ./bootstrap-vcpkg.sh -useSystemBinaries
-
-              echo 'Verifying vcpkg was built:'
-              ls -la vcpkg
-              file vcpkg
 
               echo 'Setting up custom triplets...'
               cp /workspace/triplets/*.cmake ./triplets/
@@ -312,7 +305,7 @@ jobs:
               echo 'Installing dependencies with vcpkg...'
               export VCPKG_LIBRARY_LINKAGE=static
               export VCPKG_ROOT=/workspace/vcpkg-musl
-              ./vcpkg install snappy lz4 zlib zstd liburing --triplet ${{ matrix.platform.triplet }}
+              ./vcpkg install snappy lz4 zlib zstd --triplet ${{ matrix.platform.triplet }}
 
               cd /workspace/rocksdb-${{ needs.check.outputs.version }}/build
 
