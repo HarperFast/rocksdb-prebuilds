@@ -99,6 +99,10 @@ jobs:
           curl -L -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -o rocksdb.tar.gz "$URL"
           tar -xzf rocksdb.tar.gz
           cp windows/thirdparty.inc ${{ env.ROCKSDB_DIR }}/
+
+          mkdir -p dist/include
+          mkdir -p dist/lib
+
           cd ${{ env.ROCKSDB_DIR }}
           for patch in "${GITHUB_WORKSPACE}/patches"/*.patch; do
             if [ -f "$patch" ]; then
@@ -107,9 +111,6 @@ jobs:
             fi
           done
           mkdir build
-          mkdir -p dist/include
-          cp -r include/rocksdb dist/include/
-          mkdir -p dist/lib
           cd ..
 
       - name: Install vcpkg and libraries
@@ -225,65 +226,20 @@ jobs:
           set -o pipefail
 
           # Determine features based on platform
-          if [[ "${{ matrix.platform.target }}" == "linux-arm64-glibc" || "${{ matrix.platform.target }}" == "linux-x64-glibc" ]]; then
-            FEATURES="snappy,lz4,zlib,zstd,liburing"
-          else
-            FEATURES="snappy,lz4,zlib,zstd"
-          fi
+          # if [[ "${{ matrix.platform.target }}" == "linux-arm64-glibc" || "${{ matrix.platform.target }}" == "linux-x64-glibc" ]]; then
+          #   FEATURES="snappy,lz4,zlib,zstd,liburing"
+          # else
+          #   FEATURES="snappy,lz4,zlib,zstd"
+          # fi
 
           export ROCKSDB_DIR=${{ env.ROCKSDB_DIR }}
 
-          # echo "Building RocksDB..."
-          # cd "${{ env.ROCKSDB_DIR }}/build"
-          # cmake .. \
-          #   -DCMAKE_BUILD_TYPE=Release \
-          #   -DCMAKE_DISABLE_FIND_PACKAGE_Git=TRUE \
-          #   -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
-          #   -DCMAKE_PREFIX_PATH="$VCPKG_ROOT/installed/$VCPKG_TRIPLET" \
-          #   -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
-          #   -DFAIL_ON_WARNINGS=OFF \
-          #   -DPORTABLE=ON \
-          #   -DROCKSDB_BUILD_SHARED=OFF \
-          #   -DUSE_RTTI=ON \
-          #   -DWITH_BENCHMARK_TOOLS=OFF \
-          #   -DWITH_GFLAGS=OFF \
-          #   -DWITH_LIBURING="$WITH_LIBURING" \
-          #   -DWITH_LZ4=ON \
-          #   -DWITH_SNAPPY=ON \
-          #   -DWITH_TESTS=OFF \
-          #   -DWITH_TOOLS=OFF \
-          #   -DWITH_ZLIB=ON \
-          #   -DWITH_ZSTD=ON \
-          #   -DWITH_RUNTIME_DEBUG=OFF \
-          #   -DVCPKG_TARGET_TRIPLET="$VCPKG_TRIPLET"
-          # cmake --build . --config Release --target rocksdb
-          # cd ..
-
-          $VCPKG_ROOT/vcpkg install "rocksdb[${FEATURES}]" \
+          # $VCPKG_ROOT/vcpkg install "rocksdb[${FEATURES}]" \
+          $VCPKG_ROOT/vcpkg install "rocksdb" \
             --triplet "${{ matrix.platform.triplet }}" \
             --overlay-ports="${GITHUB_WORKSPACE}/vcpkg-overlays"
 
-          cp -r "$VCPKG_ROOT/installed/${{ matrix.platform.triplet }}/" "$ROCKSDB_DIR/dist/"
-
-          # if [[ "${{ matrix.platform.target }}" == "darwin-arm64" || "${{ matrix.platform.target }}" == "darwin-x64" ]]; then
-          #   echo "Creating combined static library..."
-          #   VCPKG_LIB_DIR="$VCPKG_ROOT/installed/$VCPKG_TRIPLET/lib"
-
-          #   echo "Verifying library architectures:"
-          #   lipo -info build/librocksdb.a
-          #   lipo -info "$VCPKG_LIB_DIR/libsnappy.a"
-
-          #   libtool -static -o dist/lib/librocksdb-bundle.a \
-          #     build/librocksdb.a \
-          #     "$VCPKG_LIB_DIR/libsnappy.a" \
-          #     "$VCPKG_LIB_DIR/liblz4.a" \
-          #     "$VCPKG_LIB_DIR/libz.a" \
-          #     "$VCPKG_LIB_DIR/libzstd.a"
-
-          #   mv build/librocksdb.a dist/lib/
-          # else
-          #   mv build/librocksdb.a dist/lib/
-          # fi
+          cp -r "$VCPKG_ROOT/installed/${{ matrix.platform.triplet }}/" "${GITHUB_WORKSPACE}/dist/"
 
       - name: Build RocksDB (linux musl)
         if: ${{ matrix.platform.target == 'linux-x64-musl' || matrix.platform.target == 'linux-arm64-musl' }}
@@ -360,7 +316,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}
-          path: rocksdb-${{ needs.check.outputs.version }}/dist/
+          path: dist/
 
   # release:
   #   name: Release
