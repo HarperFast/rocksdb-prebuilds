@@ -263,8 +263,7 @@ jobs:
             --triplet "${{ matrix.platform.triplet }}" \
             --overlay-ports="${GITHUB_WORKSPACE}/vcpkg-overlays"
 
-          cp "$VCPKG_ROOT/installed/${{ matrix.platform.triplet }}/lib/librocksdb.a" \
-           "$ROCKSDB_DIR/dist/lib/"
+          cp -r "$VCPKG_ROOT/installed/${{ matrix.platform.triplet }}/" "$ROCKSDB_DIR/dist/"
 
           # if [[ "${{ matrix.platform.target }}" == "darwin-arm64" || "${{ matrix.platform.target }}" == "darwin-x64" ]]; then
           #   echo "Creating combined static library..."
