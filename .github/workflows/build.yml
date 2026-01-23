@@ -231,7 +231,7 @@ jobs:
             FEATURES="snappy,lz4,zlib,zstd"
           fi
 
-          # export ROCKSDB_DIR=${{ env.ROCKSDB_DIR }}
+          export ROCKSDB_DIR=${{ env.ROCKSDB_DIR }}
 
           # echo "Building RocksDB..."
           # cd "${{ env.ROCKSDB_DIR }}/build"
