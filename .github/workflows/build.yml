@@ -259,15 +259,14 @@ jobs:
             lipo -info build/librocksdb.a
             lipo -info "$VCPKG_LIB_DIR/libsnappy.a"
 
-            libtool -static -o dist/lib/librocksdb.a \
+            libtool -static -o dist/lib/librocksdb-bundle.a \
               build/librocksdb.a \
               "$VCPKG_LIB_DIR/libsnappy.a" \
               "$VCPKG_LIB_DIR/liblz4.a" \
               "$VCPKG_LIB_DIR/libz.a" \
               "$VCPKG_LIB_DIR/libzstd.a"
 
-            echo "Verifying combined library:"
-            nm -gU dist/lib/librocksdb.a | grep -i snappy | head -10
+            mv build/librocksdb.a dist/lib/
           else
             mv build/librocksdb.a dist/lib/
           fi
