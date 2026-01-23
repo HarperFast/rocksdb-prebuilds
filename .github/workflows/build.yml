@@ -236,7 +236,7 @@ jobs:
             -DFAIL_ON_WARNINGS=OFF \
             -DPORTABLE=ON \
             -DROCKSDB_BUILD_SHARED=OFF \
-            -DUSE_RTTI=OFF \
+            -DUSE_RTTI=ON \
             -DWITH_BENCHMARK_TOOLS=OFF \
             -DWITH_GFLAGS=OFF \
             -DWITH_LIBURING="$WITH_LIBURING" \
