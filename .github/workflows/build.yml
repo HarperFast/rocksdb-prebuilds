@@ -137,10 +137,17 @@ jobs:
             VCPKG_CMD="$VCPKG_ROOT/vcpkg"
           fi
 
-          $VCPKG_CMD install "rocksdb" \
-            --triplet "${{ matrix.platform.triplet }}" \
+          if ! $VCPKG_CMD install rocksdb \
+            --triplet ${{ matrix.platform.triplet }} \
             --overlay-ports="${GITHUB_WORKSPACE}/vcpkg-overlays" \
-            --overlay-triplets="${GITHUB_WORKSPACE}/vcpkg-triplets"
+            --overlay-triplets="${GITHUB_WORKSPACE}/vcpkg-triplets"; then
+            echo '=== Build failed, dumping logs ==='
+            echo '=== install-${{ matrix.platform.triplet }}-dbg-out.log ==='
+            cat ${GITHUB_WORKSPACE}/vcpkg/buildtrees/rocksdb/install-${{ matrix.platform.triplet }}-dbg-out.log 2>/dev/null || echo 'Log file not found'
+            echo '=== install-${{ matrix.platform.triplet }}-dbg-err.log ==='
+            cat ${GITHUB_WORKSPACE}/vcpkg/buildtrees/rocksdb/install-${{ matrix.platform.triplet }}-dbg-err.log 2>/dev/null || echo 'Log file not found'
+            exit 1
+          fi
 
           cp -r "$VCPKG_ROOT/installed/${{ matrix.platform.triplet }}/" "${GITHUB_WORKSPACE}/dist/"
 
