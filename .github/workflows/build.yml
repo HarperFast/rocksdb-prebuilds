@@ -51,18 +51,18 @@ jobs:
       fail-fast: false
       matrix:
         platform:
-          - runner: macos-latest
-            target: darwin-arm64
-            triplet: arm64-osx-static
-          - runner: macos-latest
-            target: darwin-x64
-            triplet: x64-osx-static
-          - runner: ubuntu-22.04
-            target: linux-x64-glibc
-            triplet: x64-linux
-          - runner: ubuntu-22.04-arm
-            target: linux-arm64-glibc
-            triplet: arm64-linux
+          # - runner: macos-latest
+          #   target: darwin-arm64
+          #   triplet: arm64-osx-static
+          # - runner: macos-latest
+          #   target: darwin-x64
+          #   triplet: x64-osx-static
+          # - runner: ubuntu-22.04
+          #   target: linux-x64-glibc
+          #   triplet: x64-linux
+          # - runner: ubuntu-22.04-arm
+          #   target: linux-arm64-glibc
+          #   triplet: arm64-linux
           - runner: ubuntu-latest
             target: linux-x64-musl
             triplet: x64-linux-musl
@@ -216,14 +216,14 @@ jobs:
 
               apk add --no-cache \
                 curl \
-                musl-dev
+                musl-dev \
+                zip
 
               # build-base \
               # cmake \
               # git \
               # linux-headers \
               # bash \
-              # zip \
               # unzip \
               # tar \
               # perl \
