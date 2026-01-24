@@ -216,6 +216,7 @@ jobs:
               set -o pipefail
 
               apk add --no-cache \
+                build-base \
                 cmake \
                 curl \
                 git \
@@ -223,7 +224,6 @@ jobs:
                 ninja \
                 zip
 
-              # build-base \
               # linux-headers \
               # bash \
               # unzip \
