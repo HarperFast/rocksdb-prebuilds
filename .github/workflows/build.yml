@@ -66,9 +66,9 @@ jobs:
           - runner: ubuntu-latest
             target: linux-x64-musl
             triplet: x64-linux-musl
-          - runner: ubuntu-24.04-arm
-            target: linux-arm64-musl
-            triplet: arm64-linux-musl
+          # - runner: ubuntu-24.04-arm
+          #   target: linux-arm64-musl
+          #   triplet: arm64-linux-musl
           # - runner: windows-latest
           #   target: windows-x64
           #   triplet: x64-windows
@@ -226,15 +226,7 @@ jobs:
                 pkgconf \
                 zip
 
-              # linux-headers \
-              # bash \
-              # unzip \
-              # tar \
-              # perl \
-              # xz \
-              # liburing-dev
-
-              /workspace/vcpkg/bootstrap-vcpkg.sh
+              /workspace/vcpkg/bootstrap-vcpkg.sh -musl
               /workspace/vcpkg/vcpkg install "rocksdb" \
                 --triplet "${{ matrix.platform.triplet }}" \
                 --overlay-ports="/workspace/vcpkg-overlays" \
