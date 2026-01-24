@@ -218,6 +218,7 @@ jobs:
                 cmake \
                 curl \
                 musl-dev \
+                ninja \
                 zip
 
               # build-base \
@@ -229,7 +230,6 @@ jobs:
               # perl \
               # pkgconf \
               # xz \
-              # ninja \
               # liburing-dev
 
               /workspace/vcpkg/bootstrap-vcpkg.sh
