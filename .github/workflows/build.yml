@@ -142,6 +142,10 @@ jobs:
             --overlay-ports="${GITHUB_WORKSPACE}/vcpkg-overlays" \
             --overlay-triplets="${GITHUB_WORKSPACE}/vcpkg-triplets"; then
             echo '=== Build failed, dumping logs ==='
+            echo '=== config-${{ matrix.platform.triplet }}-out.log ==='
+            cat ${GITHUB_WORKSPACE}/vcpkg/buildtrees/rocksdb/config-${{ matrix.platform.triplet }}-out.log 2>/dev/null || echo 'Log file not found'
+            echo '=== config-${{ matrix.platform.triplet }}-err.log ==='
+            cat ${GITHUB_WORKSPACE}/vcpkg/buildtrees/rocksdb/config-${{ matrix.platform.triplet }}-err.log 2>/dev/null || echo 'Log file not found'
             echo '=== install-${{ matrix.platform.triplet }}-dbg-out.log ==='
             cat ${GITHUB_WORKSPACE}/vcpkg/buildtrees/rocksdb/install-${{ matrix.platform.triplet }}-dbg-out.log 2>/dev/null || echo 'Log file not found'
             echo '=== install-${{ matrix.platform.triplet }}-dbg-err.log ==='
