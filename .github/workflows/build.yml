@@ -184,6 +184,7 @@ jobs:
       - name: Build RocksDB (macos/linux glibc)
         if: ${{ matrix.platform.target == 'darwin-arm64' || matrix.platform.target == 'darwin-x64' || matrix.platform.target == 'linux-x64-glibc' || matrix.platform.target == 'linux-arm64-glibc' }}
         env:
+          ROCKSDB_DIR: ${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}
           VCPKG_ROOT: ${{ github.workspace }}/vcpkg
           VCPKG_TRIPLET: ${{ matrix.platform.triplet }}
         shell: bash
@@ -191,12 +192,10 @@ jobs:
           set -e
           set -o pipefail
 
-          export ROCKSDB_DIR=${GITHUB_WORKSPACE}/rocksdb-${{ needs.check.outputs.version }}
-
           $VCPKG_ROOT/bootstrap-vcpkg.sh
           $VCPKG_ROOT/vcpkg install "rocksdb" \
             --triplet "${{ matrix.platform.triplet }}" \
-            --overlay-ports="${GITHUB_WORKSPACE}/vcpkg-overlays"
+            --overlay-ports="${GITHUB_WORKSPACE}/vcpkg-overlays" \
             --overlay-triplets="${GITHUB_WORKSPACE}/vcpkg-triplets"
 
           cp -r "$VCPKG_ROOT/installed/${{ matrix.platform.triplet }}/" "${GITHUB_WORKSPACE}/dist/"
@@ -205,21 +204,22 @@ jobs:
         if: ${{ matrix.platform.target == 'linux-x64-musl' || matrix.platform.target == 'linux-arm64-musl' }}
         shell: bash
         run: |
-          set -e
-          set -o pipefail
-
           # Build inside Alpine Docker container (musl)
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
+            -e ROCKSDB_DIR=/workspace/rocksdb-${{ needs.check.outputs.version }} \
             -w /workspace \
             alpine:latest \
             sh -c "
+              set -e
+              set -o pipefail
+
               apk add --no-cache \
+                curl \
                 musl-dev
 
               # build-base \
               # cmake \
-              # curl \
               # git \
               # linux-headers \
               # bash \
@@ -231,8 +231,6 @@ jobs:
               # xz \
               # ninja \
               # liburing-dev
-
-              export ROCKSDB_DIR=/workspace/rocksdb-${{ needs.check.outputs.version }}
 
               /workspace/vcpkg/bootstrap-vcpkg.sh
               /workspace/vcpkg/vcpkg install "rocksdb" \
