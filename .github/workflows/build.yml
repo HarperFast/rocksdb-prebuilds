@@ -209,6 +209,7 @@ jobs:
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
             -e ROCKSDB_DIR=/workspace/rocksdb-${{ needs.check.outputs.version }} \
+            -e VCPKG_FORCE_SYSTEM_BINARIES=1 \
             -w /workspace \
             alpine:latest \
             sh -c "
@@ -233,7 +234,7 @@ jobs:
               # xz \
               # liburing-dev
 
-              /workspace/vcpkg/bootstrap-vcpkg.sh -useSystemBinaries
+              /workspace/vcpkg/bootstrap-vcpkg.sh
               /workspace/vcpkg/vcpkg install "rocksdb" \
                 --triplet "${{ matrix.platform.triplet }}" \
                 --overlay-ports="/workspace/vcpkg-overlays" \
