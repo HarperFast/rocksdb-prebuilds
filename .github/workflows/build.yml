@@ -221,6 +221,7 @@ jobs:
                 cmake \
                 curl \
                 git \
+                linux-headers \
                 musl-dev \
                 ninja \
                 pkgconf \
