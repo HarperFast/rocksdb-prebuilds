@@ -1,4 +1,9 @@
-set(SOURCE_PATH "$ENV{ROCKSDB_DIR}")
+# Set SOURCE_PATH to vcpkg's build tree and copy external source
+set(SOURCE_PATH "${CURRENT_BUILDTREES_DIR}/src")
+
+# Copy source from external directory into vcpkg's build tree
+file(REMOVE_RECURSE "${SOURCE_PATH}")
+file(COPY "$ENV{ROCKSDB_DIR}/" DESTINATION "${SOURCE_PATH}")
 
 string(COMPARE EQUAL "${VCPKG_CRT_LINKAGE}" "dynamic" WITH_MD_LIBRARY)
 string(COMPARE EQUAL "${VCPKG_LIBRARY_LINKAGE}" "dynamic" ROCKSDB_BUILD_SHARED)
