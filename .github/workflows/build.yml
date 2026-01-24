@@ -215,12 +215,12 @@ jobs:
               set -o pipefail
 
               apk add --no-cache \
+                cmake \
                 curl \
                 musl-dev \
                 zip
 
               # build-base \
-              # cmake \
               # git \
               # linux-headers \
               # bash \
