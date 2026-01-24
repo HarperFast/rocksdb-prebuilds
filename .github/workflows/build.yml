@@ -72,9 +72,9 @@ jobs:
           - runner: windows-latest
             target: windows-x64
             triplet: x64-windows
-          - runner: windows-latest
-            target: windows-arm64
-            triplet: arm64-windows
+          # - runner: windows-latest
+          #   target: windows-arm64
+          #   triplet: arm64-windows
     runs-on: ${{ matrix.platform.runner }}
     env:
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
@@ -137,6 +137,11 @@ jobs:
           else
             $VCPKG_ROOT/bootstrap-vcpkg.sh
             VCPKG_CMD="$VCPKG_ROOT/vcpkg"
+          fi
+
+          # Limit parallelism on Windows to avoid resource exhaustion
+          if [ "${{ matrix.platform.target }}" == "windows-x64" || "${{ matrix.platform.target }}" == "windows-arm64" ]; then
+            export VCPKG_MAX_CONCURRENCY=2
           fi
 
           if ! $VCPKG_CMD install rocksdb \
