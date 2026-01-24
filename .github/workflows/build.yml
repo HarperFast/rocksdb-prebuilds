@@ -119,6 +119,8 @@ jobs:
           ROCKSDB_DIR: ${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}
           VCPKG_ROOT: ${{ github.workspace }}/vcpkg
           VCPKG_TRIPLET: ${{ matrix.platform.triplet }}
+          VERBOSE: 1
+          CMAKE_VERBOSE_MAKEFILE: ON
         shell: bash
         run: |
           set -e
