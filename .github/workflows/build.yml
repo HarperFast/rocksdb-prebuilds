@@ -113,77 +113,8 @@ jobs:
             fi
           done
 
-      - name: Build RocksDB (windows)
-        if: ${{ matrix.platform.target == 'windows-x64' || matrix.platform.target == 'windows-arm64' }}
-        env:
-          VCPKG_ROOT: ${{ github.workspace }}/vcpkg
-          VCPKG_TRIPLET: ${{ matrix.platform.triplet }}
-        shell: bash
-        run: |
-          set -e
-          set -o pipefail
-
-          if [ "${{ matrix.platform.target }}" == "windows-arm64" ]; then
-            CMAKE_ARCH="ARM64"
-          else
-            CMAKE_ARCH="x64"
-          fi
-          $VCPKG_ROOT/bootstrap-vcpkg.bat
-
-          echo "Building RocksDB (release)..."
-          cd "${GITHUB_WORKSPACE}/rocksdb-${{ needs.check.outputs.version }}/build"
-          # -DCMAKE_PREFIX_PATH="$VCPKG_ROOT/installed/$VCPKG_TRIPLET" \
-          cmake .. \
-            -A "$CMAKE_ARCH" \
-            -DFAIL_ON_WARNINGS=OFF \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_DISABLE_FIND_PACKAGE_Git=TRUE \
-            -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
-            -DPORTABLE=ON \
-            -DROCKSDB_BUILD_SHARED=OFF \
-            -DUSE_RTTI=ON \
-            -DWITH_BENCHMARK_TOOLS=OFF \
-            -DWITH_GFLAGS=OFF \
-            -DWITH_LIBURING="$WITH_LIBURING" \
-            -DWITH_LZ4=ON \
-            -DWITH_SNAPPY=ON \
-            -DWITH_TESTS=OFF \
-            -DWITH_TOOLS=OFF \
-            -DWITH_ZLIB=ON \
-            -DWITH_ZSTD=ON \
-            -DWITH_RUNTIME_DEBUG=OFF \
-            -DVCPKG_TARGET_TRIPLET="$VCPKG_TRIPLET"
-          cmake --build . --config Release --target rocksdb
-
-          # echo "Building RocksDB (debug)..."
-          # cmake .. \
-          #   -A "$CMAKE_ARCH" \
-          #   -DCMAKE_PREFIX_PATH="$VCPKG_ROOT/installed/$VCPKG_TRIPLET" \
-          #   -DVCPKG_TARGET_TRIPLET="$VCPKG_TRIPLET" \
-          #   -DCMAKE_CXX_FLAGS="-wd4702" \
-          #   -DCMAKE_BUILD_TYPE=Debug \
-          #   -DPORTABLE=ON \
-          #   -DWITH_SNAPPY=ON \
-          #   -DWITH_LZ4=ON \
-          #   -DWITH_ZLIB=ON \
-          #   -DWITH_ZSTD=ON \
-          #   -DROCKSDB_BUILD_SHARED=OFF \
-          #   -DWITH_GFLAGS=OFF \
-          #   -DWITH_TESTS=OFF \
-          #   -DBUILD_TESTING=OFF
-          # cmake --build . --config Debug --target rocksdb
-          # mv Debug/rocksdb.lib ../dist/lib/rocksdbd.lib
-          cd ..
-
-          ls -la .
-          ls -la build/
-          ls -la build/Release/
-          ls -la dist/
-          mv build/Release/rocksdb.lib dist/lib/
-          ls -la dist/lib/
-
-      - name: Build RocksDB (macos/linux glibc)
-        if: ${{ matrix.platform.target == 'darwin-arm64' || matrix.platform.target == 'darwin-x64' || matrix.platform.target == 'linux-x64-glibc' || matrix.platform.target == 'linux-arm64-glibc' }}
+      - name: Build RocksDB (macos/linux glibc/windows)
+        if: ${{ matrix.platform.target != 'linux-x64-musl' || matrix.platform.target != 'linux-arm64-musl' }}
         env:
           ROCKSDB_DIR: ${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}
           VCPKG_ROOT: ${{ github.workspace }}/vcpkg
@@ -193,8 +124,20 @@ jobs:
           set -e
           set -o pipefail
 
-          $VCPKG_ROOT/bootstrap-vcpkg.sh
-          $VCPKG_ROOT/vcpkg install "rocksdb" \
+          if [ "${{ matrix.platform.target }}" == "windows-x64" || "${{ matrix.platform.target }}" == "windows-arm64" ]; then
+            if [ "${{ matrix.platform.target }}" == "windows-arm64" ]; then
+              CMAKE_ARCH="ARM64"
+            else
+              CMAKE_ARCH="x64"
+            fi
+            $VCPKG_ROOT/bootstrap-vcpkg.bat
+            VCPKG_CMD="$VCPKG_ROOT/vcpkg.exe"
+          else
+            $VCPKG_ROOT/bootstrap-vcpkg.sh
+            VCPKG_CMD="$VCPKG_ROOT/vcpkg"
+          fi
+
+          $VCPKG_CMD install "rocksdb" \
             --triplet "${{ matrix.platform.triplet }}" \
             --overlay-ports="${GITHUB_WORKSPACE}/vcpkg-overlays" \
             --overlay-triplets="${GITHUB_WORKSPACE}/vcpkg-triplets"
