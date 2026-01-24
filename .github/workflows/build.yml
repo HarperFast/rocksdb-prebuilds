@@ -83,6 +83,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install cmake 3.31.10
+        if: ${{ matrix.platform.target != 'linux-x64-musl' || matrix.platform.target != 'linux-arm64-musl' }}
         uses: lukka/get-cmake@latest
         with:
           cmakeVersion: 3.31.10
@@ -217,12 +218,12 @@ jobs:
               apk add --no-cache \
                 cmake \
                 curl \
+                git \
                 musl-dev \
                 ninja \
                 zip
 
               # build-base \
-              # git \
               # linux-headers \
               # bash \
               # unzip \
