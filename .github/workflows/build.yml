@@ -54,21 +54,21 @@ jobs:
           - runner: macos-latest
             target: darwin-arm64
             triplet: arm64-osx-static
-          # - runner: macos-latest
-          #   target: darwin-x64
-          #   triplet: x64-osx-static
-          # - runner: ubuntu-22.04
-          #   target: linux-x64-glibc
-          #   triplet: x64-linux
-          # - runner: ubuntu-22.04-arm
-          #   target: linux-arm64-glibc
-          #   triplet: arm64-linux
-          # - runner: ubuntu-latest
-          #   target: linux-x64-musl
-          #   triplet: x64-linux-musl
-          # - runner: ubuntu-24.04-arm
-          #   target: linux-arm64-musl
-          #   triplet: arm64-linux-musl
+          - runner: macos-latest
+            target: darwin-x64
+            triplet: x64-osx-static
+          - runner: ubuntu-22.04
+            target: linux-x64-glibc
+            triplet: x64-linux
+          - runner: ubuntu-22.04-arm
+            target: linux-arm64-glibc
+            triplet: arm64-linux
+          - runner: ubuntu-latest
+            target: linux-x64-musl
+            triplet: x64-linux-musl
+          - runner: ubuntu-24.04-arm
+            target: linux-arm64-musl
+            triplet: arm64-linux-musl
           # - runner: windows-latest
           #   target: windows-x64
           #   triplet: x64-windows
@@ -88,64 +88,29 @@ jobs:
           cmakeVersion: 3.31.10
 
       - name: Download and patch RocksDB
-        env:
-          ROCKSDB_DIR: ${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}
         shell: bash
         run: |
           set -e
           set -o pipefail
+
+          echo "Installing vcpkg..."
+          git clone https://github.com/microsoft/vcpkg
+
           URL="https://github.com/facebook/rocksdb/archive/refs/tags/v${{ needs.check.outputs.version }}.tar.gz"
           echo "Downloading: $URL"
           curl -L -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -o rocksdb.tar.gz "$URL"
           tar -xzf rocksdb.tar.gz
-          cp windows/thirdparty.inc ${{ env.ROCKSDB_DIR }}/
+          cp windows/thirdparty.inc "${GITHUB_WORKSPACE}/rocksdb-${{ needs.check.outputs.version }}/"
 
           mkdir -p dist/include
           mkdir -p dist/lib
 
-          cd ${{ env.ROCKSDB_DIR }}
           for patch in "${GITHUB_WORKSPACE}/patches"/*.patch; do
             if [ -f "$patch" ]; then
               echo "Applying patch: $patch"
-              patch -p1 < "$patch"
+              patch -p1 -d "${GITHUB_WORKSPACE}/rocksdb-${{ needs.check.outputs.version }}" < "$patch"
             fi
           done
-          mkdir build
-          cd ..
-
-      - name: Install vcpkg and libraries
-        if: ${{ matrix.platform.target != 'linux-x64-musl' && matrix.platform.target != 'linux-arm64-musl' }}
-        env:
-          ROCKSDB_DIR: ${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}
-          VCPKG_ROOT: ${{ github.workspace }}/vcpkg
-        shell: bash
-        run: |
-          set -e
-          set -o pipefail
-          git clone https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
-
-          # Copy custom triplets
-          if [[ "${{ matrix.platform.target }}" == "darwin-arm64" || "${{ matrix.platform.target }}" == "darwin-x64" ]]; then
-            cp "${GITHUB_WORKSPACE}/triplets/${{ matrix.platform.triplet }}.cmake" "$VCPKG_ROOT/triplets/"
-          fi
-
-          if [[ "${{ matrix.platform.target }}" == "windows-x64" || "${{ matrix.platform.target }}" == "windows-arm64" ]]; then
-            if [ "${{ matrix.platform.target }}" == "windows-arm64" ]; then
-              CMAKE_ARCH="ARM64"
-            else
-              CMAKE_ARCH="x64"
-            fi
-            $VCPKG_ROOT/bootstrap-vcpkg.bat
-            # "$VCPKG_ROOT/vcpkg.exe" install snappy lz4 zlib zstd --triplet "${{ matrix.platform.triplet }}" --host-triplet "${{ matrix.platform.triplet }}" --overlay-ports="${GITHUB_WORKSPACE}/vcpkg-overlays"
-          else
-            $VCPKG_ROOT/bootstrap-vcpkg.sh
-            # Install liburing only for Linux targets
-            # if [[ "${{ matrix.platform.target }}" == "linux-x64-glibc" || "${{ matrix.platform.target }}" == "linux-arm64-glibc" ]]; then
-            #   $VCPKG_ROOT/vcpkg install snappy lz4 zlib zstd liburing --triplet "${{ matrix.platform.triplet }}" --overlay-ports="${GITHUB_WORKSPACE}/vcpkg-overlays"
-            # else
-            #   $VCPKG_ROOT/vcpkg install snappy lz4 zlib zstd --triplet "${{ matrix.platform.triplet }}" --overlay-ports="${GITHUB_WORKSPACE}/vcpkg-overlays"
-            # fi
-          fi
 
       - name: Build RocksDB (windows)
         if: ${{ matrix.platform.target == 'windows-x64' || matrix.platform.target == 'windows-arm64' }}
@@ -156,11 +121,13 @@ jobs:
         run: |
           set -e
           set -o pipefail
+
           if [ "${{ matrix.platform.target }}" == "windows-arm64" ]; then
             CMAKE_ARCH="ARM64"
           else
             CMAKE_ARCH="x64"
           fi
+          $VCPKG_ROOT/bootstrap-vcpkg.bat
 
           echo "Building RocksDB (release)..."
           cd "${GITHUB_WORKSPACE}/rocksdb-${{ needs.check.outputs.version }}/build"
@@ -217,7 +184,6 @@ jobs:
       - name: Build RocksDB (macos/linux glibc)
         if: ${{ matrix.platform.target == 'darwin-arm64' || matrix.platform.target == 'darwin-x64' || matrix.platform.target == 'linux-x64-glibc' || matrix.platform.target == 'linux-arm64-glibc' }}
         env:
-          ROCKSDB_DIR: ${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}
           VCPKG_ROOT: ${{ github.workspace }}/vcpkg
           VCPKG_TRIPLET: ${{ matrix.platform.triplet }}
         shell: bash
@@ -225,19 +191,13 @@ jobs:
           set -e
           set -o pipefail
 
-          # Determine features based on platform
-          # if [[ "${{ matrix.platform.target }}" == "linux-arm64-glibc" || "${{ matrix.platform.target }}" == "linux-x64-glibc" ]]; then
-          #   FEATURES="snappy,lz4,zlib,zstd,liburing"
-          # else
-          #   FEATURES="snappy,lz4,zlib,zstd"
-          # fi
+          export ROCKSDB_DIR=${GITHUB_WORKSPACE}/rocksdb-${{ needs.check.outputs.version }}
 
-          export ROCKSDB_DIR=${{ env.ROCKSDB_DIR }}
-
-          # $VCPKG_ROOT/vcpkg install "rocksdb[${FEATURES}]" \
+          $VCPKG_ROOT/bootstrap-vcpkg.sh
           $VCPKG_ROOT/vcpkg install "rocksdb" \
             --triplet "${{ matrix.platform.triplet }}" \
             --overlay-ports="${GITHUB_WORKSPACE}/vcpkg-overlays"
+            --overlay-triplets="${GITHUB_WORKSPACE}/vcpkg-triplets"
 
           cp -r "$VCPKG_ROOT/installed/${{ matrix.platform.triplet }}/" "${GITHUB_WORKSPACE}/dist/"
 
@@ -255,61 +215,32 @@ jobs:
             alpine:latest \
             sh -c "
               apk add --no-cache \
-                build-base \
-                cmake \
-                curl \
-                git \
-                linux-headers \
-                musl-dev \
-                bash \
-                zip \
-                unzip \
-                tar \
-                perl \
-                pkgconf \
-                xz \
-                ninja \
-                liburing-dev
+                musl-dev
 
-              echo 'Installing vcpkg...'
-              export VCPKG_FORCE_SYSTEM_BINARIES=1
-              git clone https://github.com/microsoft/vcpkg /workspace/vcpkg-musl
-              cd /workspace/vcpkg-musl
-              ./bootstrap-vcpkg.sh -useSystemBinaries
+              # build-base \
+              # cmake \
+              # curl \
+              # git \
+              # linux-headers \
+              # bash \
+              # zip \
+              # unzip \
+              # tar \
+              # perl \
+              # pkgconf \
+              # xz \
+              # ninja \
+              # liburing-dev
 
-              echo 'Setting up custom triplets...'
-              cp /workspace/triplets/*.cmake ./triplets/
+              export ROCKSDB_DIR=/workspace/rocksdb-${{ needs.check.outputs.version }}
 
-              # echo 'Installing dependencies with vcpkg...'
-              # export VCPKG_LIBRARY_LINKAGE=static
-              # export VCPKG_ROOT=/workspace/vcpkg-musl
-              # ./vcpkg install snappy lz4 zlib zstd --triplet ${{ matrix.platform.triplet }} --overlay-ports=/workspace/vcpkg-overlays
+              /workspace/vcpkg/bootstrap-vcpkg.sh
+              /workspace/vcpkg/vcpkg install "rocksdb" \
+                --triplet "${{ matrix.platform.triplet }}" \
+                --overlay-ports="/workspace/vcpkg-overlays" \
+                --overlay-triplets="/workspace/vcpkg-triplets"
 
-              cd /workspace/rocksdb-${{ needs.check.outputs.version }}/build
-
-              echo 'Building RocksDB...'
-              cmake .. \
-                -DFAIL_ON_WARNINGS=OFF \
-                -DCMAKE_BUILD_TYPE=Release \
-                -DCMAKE_DISABLE_FIND_PACKAGE_Git=TRUE \
-                -DCMAKE_TOOLCHAIN_FILE=/workspace/vcpkg-musl/scripts/buildsystems/vcpkg.cmake \
-                -DPORTABLE=ON \
-                -DROCKSDB_BUILD_SHARED=OFF \
-                -DUSE_RTTI=ON \
-                -DWITH_BENCHMARK_TOOLS=OFF \
-                -DWITH_GFLAGS=OFF \
-                -DWITH_LIBURING=ON \
-                -DWITH_LZ4=ON \
-                -DWITH_SNAPPY=ON \
-                -DWITH_TESTS=OFF \
-                -DWITH_TOOLS=OFF \
-                -DWITH_ZLIB=ON \
-                -DWITH_ZSTD=ON \
-                -DWITH_RUNTIME_DEBUG=OFF \
-                -DVCPKG_TARGET_TRIPLET=${{ matrix.platform.triplet }}
-              cmake --build . --config Release --target rocksdb
-
-              mv librocksdb.a ../dist/lib/
+              cp -r "/workspace/vcpkg/installed/${{ matrix.platform.triplet }}/" "/workspace/dist/"
             "
 
       - name: Upload artifact
