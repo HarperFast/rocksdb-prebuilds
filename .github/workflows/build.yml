@@ -223,6 +223,7 @@ jobs:
                 git \
                 musl-dev \
                 ninja \
+                pkgconf \
                 zip
 
               # linux-headers \
@@ -230,7 +231,6 @@ jobs:
               # unzip \
               # tar \
               # perl \
-              # pkgconf \
               # xz \
               # liburing-dev
 
