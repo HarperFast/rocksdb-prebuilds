@@ -140,7 +140,8 @@ jobs:
           if ! $VCPKG_CMD install rocksdb \
             --triplet ${{ matrix.platform.triplet }} \
             --overlay-ports="${GITHUB_WORKSPACE}/vcpkg-overlays" \
-            --overlay-triplets="${GITHUB_WORKSPACE}/vcpkg-triplets"; then
+            --overlay-triplets="${GITHUB_WORKSPACE}/vcpkg-triplets" \
+            --debug; then
             echo '=== Build failed, dumping logs ==='
             echo '=== config-${{ matrix.platform.triplet }}-out.log ==='
             cat ${GITHUB_WORKSPACE}/vcpkg/buildtrees/rocksdb/config-${{ matrix.platform.triplet }}-out.log 2>/dev/null || echo 'Log file not found'
