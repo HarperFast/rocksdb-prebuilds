@@ -233,7 +233,7 @@ jobs:
               # xz \
               # liburing-dev
 
-              /workspace/vcpkg/bootstrap-vcpkg.sh
+              /workspace/vcpkg/bootstrap-vcpkg.sh -useSystemBinaries
               /workspace/vcpkg/vcpkg install "rocksdb" \
                 --triplet "${{ matrix.platform.triplet }}" \
                 --overlay-ports="/workspace/vcpkg-overlays" \
