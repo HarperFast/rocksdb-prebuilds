@@ -20,6 +20,12 @@ vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
     "tbb" WITH_TBB
 )
 
+# Force Linux-only features OFF on non-Linux platforms
+if(NOT VCPKG_TARGET_IS_LINUX)
+  set(WITH_LIBURING OFF)
+  set(WITH_NUMA OFF)
+endif()
+
 vcpkg_cmake_configure(
   SOURCE_PATH "${SOURCE_PATH}"
   OPTIONS
@@ -34,12 +40,17 @@ vcpkg_cmake_configure(
     -DPORTABLE=1 # Minimum CPU arch to support, or 0 = current CPU, 1 = baseline CPU
     -DROCKSDB_BUILD_SHARED=${ROCKSDB_BUILD_SHARED}
     -DCMAKE_DISABLE_FIND_PACKAGE_Git=TRUE
+    -DWITH_LIBURING=${WITH_LIBURING}
+    -DWITH_NUMA=${WITH_NUMA}
     ${FEATURE_OPTIONS}
   OPTIONS_DEBUG
     -DCMAKE_DEBUG_POSTFIX=d
     -DWITH_RUNTIME_DEBUG=ON
   OPTIONS_RELEASE
     -DWITH_RUNTIME_DEBUG=OFF
+  MAYBE_UNUSED_VARIABLES
+    WITH_LIBURING
+    WITH_NUMA
 )
 
 vcpkg_cmake_install()
