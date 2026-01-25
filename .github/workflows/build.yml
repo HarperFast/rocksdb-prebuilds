@@ -115,12 +115,11 @@ jobs:
 
       - name: Build RocksDB (macos/linux glibc/windows)
         if: ${{ matrix.platform.target != 'linux-x64-musl' || matrix.platform.target != 'linux-arm64-musl' }}
+        timeout-minutes: 90
         env:
           ROCKSDB_DIR: ${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}
           VCPKG_ROOT: ${{ github.workspace }}/vcpkg
           VCPKG_TRIPLET: ${{ matrix.platform.triplet }}
-          VERBOSE: 1
-          CMAKE_VERBOSE_MAKEFILE: ON
         shell: bash
         run: |
           set -e
@@ -139,15 +138,11 @@ jobs:
             VCPKG_CMD="$VCPKG_ROOT/vcpkg"
           fi
 
-          # Limit parallelism on Windows to avoid resource exhaustion
-          if [ "${{ matrix.platform.target }}" == "windows-x64" || "${{ matrix.platform.target }}" == "windows-arm64" ]; then
-            export VCPKG_MAX_CONCURRENCY=2
-          fi
-
           if ! $VCPKG_CMD install rocksdb \
+            --cmake-args=-DCMAKE_VERBOSE_MAKEFILE=ON \
             --triplet ${{ matrix.platform.triplet }} \
             --overlay-ports="${GITHUB_WORKSPACE}/vcpkg-overlays" \
-            --overlay-triplets="${GITHUB_WORKSPACE}/vcpkg-triplets" \
+            --overlay-triplets="${GITHUB_WORKSPACE}/vcpkg-triplets" \\
             --debug; then
             echo '=== Build failed, dumping logs ==='
             echo '=== buildtrees/detect_compiler/config-${{ matrix.platform.triplet }}-out.log ==='
