@@ -142,7 +142,7 @@ jobs:
             --cmake-args=-DCMAKE_VERBOSE_MAKEFILE=ON \
             --triplet ${{ matrix.platform.triplet }} \
             --overlay-ports="${GITHUB_WORKSPACE}/vcpkg-overlays" \
-            --overlay-triplets="${GITHUB_WORKSPACE}/vcpkg-triplets" \\
+            --overlay-triplets="${GITHUB_WORKSPACE}/vcpkg-triplets" \
             --debug; then
             echo '=== Build failed, dumping logs ==='
             echo '=== buildtrees/detect_compiler/config-${{ matrix.platform.triplet }}-out.log ==='
