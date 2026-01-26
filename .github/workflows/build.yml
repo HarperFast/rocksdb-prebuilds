@@ -128,13 +128,14 @@ jobs:
           if [[ "${{ matrix.platform.target }}" == windows-* ]]; then
             $VCPKG_ROOT/bootstrap-vcpkg.bat
             VCPKG_CMD="$VCPKG_ROOT/vcpkg.exe"
+            mv "C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/vcpkg" "C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/vcpkg2"
           else
             $VCPKG_ROOT/bootstrap-vcpkg.sh
             VCPKG_CMD="$VCPKG_ROOT/vcpkg"
           fi
 
           export REAL_VCPKG_ROOT=$VCPKG_ROOT
-          export VCPKG_KEEP_ENV_VARS="REAL_VCPKG_ROOT;ROCKSDB_DIR;VCPKG_ROOT;VCPKG_TRIPLET"
+          export VCPKG_KEEP_ENV_VARS="REAL_VCPKG_ROOT;ROCKSDB_DIR;VCPKG_CMD;VCPKG_ROOT;VCPKG_TRIPLET"
 
           if ! $VCPKG_CMD install rocksdb \
             --debug \
