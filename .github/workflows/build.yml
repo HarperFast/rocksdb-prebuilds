@@ -120,24 +120,21 @@ jobs:
           ROCKSDB_DIR: ${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}
           VCPKG_ROOT: ${{ github.workspace }}/vcpkg
           VCPKG_TRIPLET: ${{ matrix.platform.triplet }}
-          VCPKG_MAX_CONCURRENCY: 2
         shell: bash
         run: |
           set -e
           set -o pipefail
 
           if [[ "${{ matrix.platform.target }}" == windows-* ]]; then
-            if [[ "${{ matrix.platform.target }}" == "windows-arm64" ]]; then
-              CMAKE_ARCH="ARM64"
-            else
-              CMAKE_ARCH="x64"
-            fi
             $VCPKG_ROOT/bootstrap-vcpkg.bat
             VCPKG_CMD="$VCPKG_ROOT/vcpkg.exe"
           else
             $VCPKG_ROOT/bootstrap-vcpkg.sh
             VCPKG_CMD="$VCPKG_ROOT/vcpkg"
           fi
+
+          export REAL_VCPKG_ROOT=$VCPKG_ROOT
+          export VCPKG_KEEP_ENV_VARS="REAL_VCPKG_ROOT;ROCKSDB_DIR;VCPKG_ROOT;VCPKG_TRIPLET"
 
           if ! $VCPKG_CMD install rocksdb \
             --debug \

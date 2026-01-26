@@ -1,6 +1,24 @@
 # Set SOURCE_PATH to vcpkg's build tree and copy external source
 set(SOURCE_PATH "${CURRENT_BUILDTREES_DIR}/src")
-message(STATUS "Using source path: ${SOURCE_PATH}")
+
+message(STATUS "===========================================================")
+message(STATUS "SOURCE_PATH     = $ENV{SOURCE_PATH}")
+message(STATUS "ROCKSDB_DIR     = $ENV{ROCKSDB_DIR}")
+message(STATUS "VCPKG_CMD       = $ENV{VCPKG_CMD}")
+message(STATUS "REAL_VCPKG_ROOT = $ENV{REAL_VCPKG_ROOT}")
+message(STATUS "VCPKG_ROOT      = $ENV{VCPKG_ROOT}")
+message(STATUS "VCPKG_TRIPLET   = $ENV{VCPKG_TRIPLET}")
+message(STATUS "===========================================================")
+
+if(NOT "$ENV{REAL_VCPKG_ROOT}" STREQUAL "$ENV{VCPKG_ROOT}")
+  message(FATAL_ERROR "VCPKG_ROOT is pointing to wrong vcpkg!")
+endif()
+
+if(NOT DEFINED ENV{ROCKSDB_DIR})
+  message(FATAL_ERROR "ROCKSDB_DIR is not defined!")
+elseif("$ENV{ROCKSDB_DIR}" STREQUAL "")
+  message(FATAL_ERROR "ROCKSDB_DIR is empty!")
+endif()
 
 # Copy source from external directory into vcpkg's build tree
 file(REMOVE_RECURSE "${SOURCE_PATH}")
@@ -10,30 +28,17 @@ file(COPY "$ENV{ROCKSDB_DIR}/" DESTINATION "${SOURCE_PATH}")
 string(COMPARE EQUAL "${VCPKG_CRT_LINKAGE}" "dynamic" WITH_MD_LIBRARY)
 string(COMPARE EQUAL "${VCPKG_LIBRARY_LINKAGE}" "dynamic" ROCKSDB_BUILD_SHARED)
 
-# Build feature list conditionally based on platform
-set(COMMON_FEATURES
+vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
+  FEATURES
+    "liburing" WITH_LIBURING
     "snappy" WITH_SNAPPY
     "lz4" WITH_LZ4
     "zlib" WITH_ZLIB
     "zstd" WITH_ZSTD
     "bzip2" WITH_BZ2
+    "numa" WITH_NUMA
     "tbb" WITH_TBB
 )
-
-if(VCPKG_TARGET_IS_LINUX)
-  list(APPEND COMMON_FEATURES "liburing" WITH_LIBURING "numa" WITH_NUMA)
-endif()
-
-vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
-  FEATURES ${COMMON_FEATURES}
-)
-
-# Set platform-specific options
-if(NOT VCPKG_TARGET_IS_LINUX)
-  set(LINUX_ONLY_OPTIONS -DWITH_LIBURING=OFF -DWITH_NUMA=OFF)
-else()
-  set(LINUX_ONLY_OPTIONS)
-endif()
 
 message(STATUS "Configuring RocksDB...")
 vcpkg_cmake_configure(
@@ -51,7 +56,6 @@ vcpkg_cmake_configure(
     -DROCKSDB_BUILD_SHARED=${ROCKSDB_BUILD_SHARED}
     -DCMAKE_DISABLE_FIND_PACKAGE_Git=TRUE
     ${FEATURE_OPTIONS}
-    ${LINUX_ONLY_OPTIONS}
   OPTIONS_DEBUG
     -DCMAKE_DEBUG_POSTFIX=d
     -DWITH_RUNTIME_DEBUG=ON

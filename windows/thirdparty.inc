@@ -129,8 +129,8 @@ endif ()
 # Edit these 4 lines to define paths to ZLIB
 #
 set(ZLIB_INCLUDE $ENV{VCPKG_ROOT}/installed/$ENV{VCPKG_TRIPLET}/include)
-set(ZLIB_LIB_DEBUG $ENV{VCPKG_ROOT}/buildtrees/zlib/$ENV{VCPKG_TRIPLET}-dbg/zlibd.lib)
-set(ZLIB_LIB_RELEASE $ENV{VCPKG_ROOT}/buildtrees/zlib/$ENV{VCPKG_TRIPLET}-rel/zlib.lib)
+set(ZLIB_LIB_DEBUG $ENV{VCPKG_ROOT}/packages/zlib_$ENV{VCPKG_TRIPLET}/debug/lib/zlibd.lib)
+set(ZLIB_LIB_RELEASE $ENV{VCPKG_ROOT}/packages/zlib_$ENV{VCPKG_TRIPLET}/lib/zlib.lib)
 
 # For compatibilty
 if (ZLIB)
