@@ -69,12 +69,12 @@ jobs:
           # - runner: ubuntu-24.04-arm
           #   target: linux-arm64-musl
           #   triplet: arm64-linux-musl
-          - runner: windows-2022
+          - runner: windows-latest
             target: windows-x64
             triplet: x64-windows-static-md
-          # - runner: windows-latest
-          #   target: windows-arm64
-          #   triplet: arm64-windows
+          - runner: windows-latest
+            target: windows-arm64
+            triplet: arm64-windows-static-md
     runs-on: ${{ matrix.platform.runner }}
     env:
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
