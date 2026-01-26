@@ -120,12 +120,13 @@ jobs:
           ROCKSDB_DIR: ${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}
           VCPKG_ROOT: ${{ github.workspace }}/vcpkg
           VCPKG_TRIPLET: ${{ matrix.platform.triplet }}
+          VCPKG_MAX_CONCURRENCY: 2
         shell: bash
         run: |
           set -e
           set -o pipefail
 
-          if [[ "${{ matrix.platform.target }}" == "windows-x64" || "${{ matrix.platform.target }}" == "windows-arm64" ]]; then
+          if [[ "${{ matrix.platform.target }}" == windows-* ]]; then
             if [[ "${{ matrix.platform.target }}" == "windows-arm64" ]]; then
               CMAKE_ARCH="ARM64"
             else
@@ -138,7 +139,7 @@ jobs:
             VCPKG_CMD="$VCPKG_ROOT/vcpkg"
           fi
 
-          if ! $VCPKG_CMD install rocksdb:${{ matrix.platform.triplet }} \
+          if ! $VCPKG_CMD install rocksdb \
             --debug \
             --triplet ${{ matrix.platform.triplet }} \
             --overlay-ports="${GITHUB_WORKSPACE}/vcpkg-overlays" \

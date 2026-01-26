@@ -1,9 +1,10 @@
-# Set SOURCE_PATH to vcpkg's build tree and copy external source
-set(SOURCE_PATH "${CURRENT_BUILDTREES_DIR}/src")
+# Use ROCKSDB_DIR directly to avoid slow file(COPY) on Windows
+set(SOURCE_PATH "$ENV{ROCKSDB_DIR}")
+message(STATUS "Using source path: ${SOURCE_PATH}")
 
-# Copy source from external directory into vcpkg's build tree
-file(REMOVE_RECURSE "${SOURCE_PATH}")
-file(COPY "$ENV{ROCKSDB_DIR}/" DESTINATION "${SOURCE_PATH}")
+if(NOT EXISTS "${SOURCE_PATH}/CMakeLists.txt")
+  message(FATAL_ERROR "RocksDB source not found at ${SOURCE_PATH}")
+endif()
 
 string(COMPARE EQUAL "${VCPKG_CRT_LINKAGE}" "dynamic" WITH_MD_LIBRARY)
 string(COMPARE EQUAL "${VCPKG_LIBRARY_LINKAGE}" "dynamic" ROCKSDB_BUILD_SHARED)
@@ -33,6 +34,7 @@ else()
   set(LINUX_ONLY_OPTIONS)
 endif()
 
+message(STATUS "Configuring RocksDB...")
 vcpkg_cmake_configure(
   SOURCE_PATH "${SOURCE_PATH}"
   OPTIONS
@@ -56,6 +58,7 @@ vcpkg_cmake_configure(
     -DWITH_RUNTIME_DEBUG=OFF
 )
 
+message(STATUS "Building and installing RocksDB...")
 vcpkg_cmake_install()
 
 vcpkg_cmake_config_fixup(CONFIG_PATH lib/cmake/rocksdb)
