@@ -72,7 +72,6 @@ jobs:
           - runner: windows-latest
             target: windows-x64
             triplet: x64-windows-static-md
-            # triplet: x64-windows
           # - runner: windows-latest
           #   target: windows-arm64
           #   triplet: arm64-windows
@@ -139,7 +138,7 @@ jobs:
             VCPKG_CMD="$VCPKG_ROOT/vcpkg"
           fi
 
-          if ! $VCPKG_CMD install rocksdb:${{ matrix.platform.target }} \
+          if ! $VCPKG_CMD install rocksdb:${{ matrix.platform.triplet }} \
             --debug \
             --triplet ${{ matrix.platform.triplet }} \
             --overlay-ports="${GITHUB_WORKSPACE}/vcpkg-overlays" \
