@@ -82,11 +82,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install cmake 3.31.10
-        if: ${{ matrix.platform.target != 'linux-x64-musl' || matrix.platform.target != 'linux-arm64-musl' }}
+      - name: Install cmake
+        if: ${{ matrix.platform.target != 'linux-x64-musl' && matrix.platform.target != 'linux-arm64-musl' }}
         uses: lukka/get-cmake@latest
         with:
-          cmakeVersion: 3.31.10
+          cmakeVersion: 3.30.5 # Use a more stable version than 3.31.10
 
       - name: Download and patch RocksDB
         shell: bash
@@ -114,8 +114,8 @@ jobs:
           done
 
       - name: Build RocksDB (macos/linux glibc/windows)
-        if: ${{ matrix.platform.target != 'linux-x64-musl' || matrix.platform.target != 'linux-arm64-musl' }}
-        timeout-minutes: 45
+        if: ${{ matrix.platform.target != 'linux-x64-musl' && matrix.platform.target != 'linux-arm64-musl' }}
+        timeout-minutes: 60
         env:
           ROCKSDB_DIR: ${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}
           VCPKG_ROOT: ${{ github.workspace }}/vcpkg
@@ -125,8 +125,8 @@ jobs:
           set -e
           set -o pipefail
 
-          if [ "${{ matrix.platform.target }}" == "windows-x64" || "${{ matrix.platform.target }}" == "windows-arm64" ]; then
-            if [ "${{ matrix.platform.target }}" == "windows-arm64" ]; then
+          if [[ "${{ matrix.platform.target }}" == "windows-x64" || "${{ matrix.platform.target }}" == "windows-arm64" ]]; then
+            if [[ "${{ matrix.platform.target }}" == "windows-arm64" ]]; then
               CMAKE_ARCH="ARM64"
             else
               CMAKE_ARCH="x64"
@@ -139,11 +139,9 @@ jobs:
           fi
 
           if ! $VCPKG_CMD install rocksdb \
-            --cmake-args=-DCMAKE_VERBOSE_MAKEFILE=ON \
             --triplet ${{ matrix.platform.triplet }} \
             --overlay-ports="${GITHUB_WORKSPACE}/vcpkg-overlays" \
-            --overlay-triplets="${GITHUB_WORKSPACE}/vcpkg-triplets" \
-            --debug; then
+            --overlay-triplets="${GITHUB_WORKSPACE}/vcpkg-triplets"; then
             echo '=== Build failed, dumping logs ==='
             echo '=== buildtrees/detect_compiler/config-${{ matrix.platform.triplet }}-out.log ==='
             cat ${GITHUB_WORKSPACE}/vcpkg/buildtrees/detect_compiler/config-${{ matrix.platform.triplet }}-out.log 2>/dev/null || echo 'Log file not found'
