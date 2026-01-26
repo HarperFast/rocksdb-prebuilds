@@ -8,22 +8,29 @@ file(COPY "$ENV{ROCKSDB_DIR}/" DESTINATION "${SOURCE_PATH}")
 string(COMPARE EQUAL "${VCPKG_CRT_LINKAGE}" "dynamic" WITH_MD_LIBRARY)
 string(COMPARE EQUAL "${VCPKG_LIBRARY_LINKAGE}" "dynamic" ROCKSDB_BUILD_SHARED)
 
-vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
-  FEATURES
-    "liburing" WITH_LIBURING
+# Build feature list conditionally based on platform
+set(COMMON_FEATURES
     "snappy" WITH_SNAPPY
     "lz4" WITH_LZ4
     "zlib" WITH_ZLIB
     "zstd" WITH_ZSTD
     "bzip2" WITH_BZ2
-    "numa" WITH_NUMA
     "tbb" WITH_TBB
 )
 
-# Force Linux-only features OFF on non-Linux platforms
+if(VCPKG_TARGET_IS_LINUX)
+  list(APPEND COMMON_FEATURES "liburing" WITH_LIBURING "numa" WITH_NUMA)
+endif()
+
+vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
+  FEATURES ${COMMON_FEATURES}
+)
+
+# Set platform-specific options
 if(NOT VCPKG_TARGET_IS_LINUX)
-  set(WITH_LIBURING OFF)
-  set(WITH_NUMA OFF)
+  set(LINUX_ONLY_OPTIONS -DWITH_LIBURING=OFF -DWITH_NUMA=OFF)
+else()
+  set(LINUX_ONLY_OPTIONS)
 endif()
 
 vcpkg_cmake_configure(
@@ -40,17 +47,13 @@ vcpkg_cmake_configure(
     -DPORTABLE=1 # Minimum CPU arch to support, or 0 = current CPU, 1 = baseline CPU
     -DROCKSDB_BUILD_SHARED=${ROCKSDB_BUILD_SHARED}
     -DCMAKE_DISABLE_FIND_PACKAGE_Git=TRUE
-    -DWITH_LIBURING=${WITH_LIBURING}
-    -DWITH_NUMA=${WITH_NUMA}
     ${FEATURE_OPTIONS}
+    ${LINUX_ONLY_OPTIONS}
   OPTIONS_DEBUG
     -DCMAKE_DEBUG_POSTFIX=d
     -DWITH_RUNTIME_DEBUG=ON
   OPTIONS_RELEASE
     -DWITH_RUNTIME_DEBUG=OFF
-  MAYBE_UNUSED_VARIABLES
-    WITH_LIBURING
-    WITH_NUMA
 )
 
 vcpkg_cmake_install()
