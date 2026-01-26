@@ -69,7 +69,7 @@ jobs:
           # - runner: ubuntu-24.04-arm
           #   target: linux-arm64-musl
           #   triplet: arm64-linux-musl
-          - runner: windows-latest
+          - runner: windows-2022
             target: windows-x64
             triplet: x64-windows-static-md
           # - runner: windows-latest
