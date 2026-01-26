@@ -115,7 +115,7 @@ jobs:
 
       - name: Build RocksDB (macos/linux glibc/windows)
         if: ${{ matrix.platform.target != 'linux-x64-musl' || matrix.platform.target != 'linux-arm64-musl' }}
-        timeout-minutes: 90
+        timeout-minutes: 45
         env:
           ROCKSDB_DIR: ${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}
           VCPKG_ROOT: ${{ github.workspace }}/vcpkg
