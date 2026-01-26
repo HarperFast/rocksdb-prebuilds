@@ -86,7 +86,7 @@ jobs:
         if: ${{ matrix.platform.target != 'linux-x64-musl' && matrix.platform.target != 'linux-arm64-musl' }}
         uses: lukka/get-cmake@latest
         with:
-          cmakeVersion: 3.30.5 # Use a more stable version than 3.31.10
+          cmakeVersion: 3.31.10
 
       - name: Download and patch RocksDB
         shell: bash
@@ -138,7 +138,8 @@ jobs:
             VCPKG_CMD="$VCPKG_ROOT/vcpkg"
           fi
 
-          if ! $VCPKG_CMD install rocksdb \
+          if ! $VCPKG_CMD install rocksdb:${{ matrix.platform.target }} \
+            --debug \
             --triplet ${{ matrix.platform.triplet }} \
             --overlay-ports="${GITHUB_WORKSPACE}/vcpkg-overlays" \
             --overlay-triplets="${GITHUB_WORKSPACE}/vcpkg-triplets"; then
