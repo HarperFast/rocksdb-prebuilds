@@ -103,8 +103,7 @@ jobs:
           tar -xzf rocksdb.tar.gz
           cp windows/thirdparty.inc "${GITHUB_WORKSPACE}/rocksdb-${{ needs.check.outputs.version }}/"
 
-          mkdir -p dist/include
-          mkdir -p dist/lib
+          mkdir dist
 
           for patch in "${GITHUB_WORKSPACE}/patches"/*.patch; do
             if [ -f "$patch" ]; then
@@ -159,7 +158,7 @@ jobs:
           fi
 
           ls -la "$VCPKG_ROOT/installed/${{ matrix.platform.triplet }}/"
-          cp -r "$VCPKG_ROOT/installed/${{ matrix.platform.triplet }}/" "${GITHUB_WORKSPACE}/dist/"
+          cp -r "$VCPKG_ROOT/installed/${{ matrix.platform.triplet }}"/* "${GITHUB_WORKSPACE}/dist/"
           ls -la "${GITHUB_WORKSPACE}/dist/"
 
       - name: Build RocksDB (linux musl)
@@ -202,7 +201,7 @@ jobs:
                 exit 1
               fi
 
-              cp -r /workspace/vcpkg/installed/${{ matrix.platform.triplet }}/ /workspace/dist/
+              cp -r /workspace/vcpkg/installed/${{ matrix.platform.triplet }}/* /workspace/dist/
             "
 
       - name: Upload artifact
