@@ -208,78 +208,78 @@ jobs:
           name: rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}
           path: dist/
 
-  # release:
-  #   name: Release
-  #   needs: [check, build]
-  #   if: ${{ needs.check.outputs.should_build == 'true' }}
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Checkout
-  #       uses: actions/checkout@v4
+  release:
+    name: Release
+    needs: [check, build]
+    if: ${{ needs.check.outputs.should_build == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-  #     - name: Download all artifacts
-  #       uses: actions/download-artifact@v4
-  #       with:
-  #         path: artifacts
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
 
-  #     - name: Configure AWS credentials
-  #       uses: aws-actions/configure-aws-credentials@v4
-  #       with:
-  #         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-  #         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-  #         aws-region: us-east-2
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-2
 
-  #     - name: Upload artifacts to S3
-  #       run: |
-  #         aws s3 cp artifacts/ s3://harper-artifacts/rocksdb-prebuilds/v${{ needs.check.outputs.version }}/ --recursive
+      - name: Upload artifacts to S3
+        run: |
+          aws s3 cp artifacts/ s3://harper-artifacts/rocksdb-prebuilds/v${{ needs.check.outputs.version }}/ --recursive
 
-  #     - name: Create release
-  #       uses: softprops/action-gh-release@v2
-  #       with:
-  #         files: artifacts/**/*.tar.xz
-  #         body: |
-  #           Automated prebuilds for RocksDB v${{ needs.check.outputs.version }}
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*.tar.xz
+          body: |
+            Automated prebuilds for RocksDB v${{ needs.check.outputs.version }}
 
-  #           Release notes: https://github.com/facebook/rocksdb/releases/tag/v${{ needs.check.outputs.version }}
-  #         name: RocksDB v${{ needs.check.outputs.version }}
-  #         tag_name: v${{ needs.check.outputs.version }}
-  #         token: ${{ secrets.GH_TOKEN }}
+            Release notes: https://github.com/facebook/rocksdb/releases/tag/v${{ needs.check.outputs.version }}
+          name: RocksDB v${{ needs.check.outputs.version }}
+          tag_name: v${{ needs.check.outputs.version }}
+          token: ${{ secrets.GH_TOKEN }}
 
-  #     - name: Send Slack notification
-  #       uses: slackapi/slack-github-action@v2.0.0
-  #       with:
-  #         method: chat.postMessage
-  #         token: ${{ secrets.SLACK_BOT_TOKEN }}
-  #         payload: |
-  #           {
-  #             "channel": "${{ secrets.SLACK_CHANNEL_ID }}",
-  #             "text": "New RocksDB prebuild: v${{ needs.check.outputs.version }}",
-  #             "blocks": [
-  #               {
-  #                 "type": "header",
-  #                 "text": {
-  #                   "type": "plain_text",
-  #                   "text": "New RocksDB prebuild: v${{ needs.check.outputs.version }}"
-  #                 }
-  #               },
-  #               {
-  #                 "type": "section",
-  #                 "text": {
-  #                   "type": "mrkdwn",
-  #                   "text": "https://github.com/harperdb/rocksdb-prebuilds/releases/tag/v${{ needs.check.outputs.version }}"
-  #                 }
-  #               }
-  #             ]
-  #           }
+      - name: Send Slack notification
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            {
+              "channel": "${{ secrets.SLACK_CHANNEL_ID }}",
+              "text": "New RocksDB prebuild: v${{ needs.check.outputs.version }}",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "New RocksDB prebuild: v${{ needs.check.outputs.version }}"
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "https://github.com/harperdb/rocksdb-prebuilds/releases/tag/v${{ needs.check.outputs.version }}"
+                  }
+                }
+              ]
+            }
 
-  #     - name: Repository Dispatch
-  #       uses: peter-evans/repository-dispatch@v3
-  #       with:
-  #         event-type: new-rocksdb-prebuild
-  #         repository: harperdb/rocksdb-js
-  #         token: ${{ secrets.GH_TOKEN }}
-  #         client-payload: |
-  #           {
-  #             "url": "https://github.com/harperdb/rocksdb-prebuilds/releases/tag/v${{ needs.check.outputs.version }}",
-  #             "version": "${{ needs.check.outputs.version }}"
-  #           }
+      - name: Repository Dispatch
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          event-type: new-rocksdb-prebuild
+          repository: harperdb/rocksdb-js
+          token: ${{ secrets.GH_TOKEN }}
+          client-payload: |
+            {
+              "url": "https://github.com/harperdb/rocksdb-prebuilds/releases/tag/v${{ needs.check.outputs.version }}",
+              "version": "${{ needs.check.outputs.version }}"
+            }
