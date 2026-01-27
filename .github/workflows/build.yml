@@ -72,9 +72,9 @@ jobs:
           - runner: windows-latest
             target: windows-x64
             triplet: x64-windows-static-md
-          - runner: windows-latest
-            target: windows-arm64
-            triplet: arm64-windows-static-md
+          # - runner: windows-latest
+          #   target: windows-arm64
+          #   triplet: arm64-windows-static-md
     runs-on: ${{ matrix.platform.runner }}
     env:
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
@@ -158,7 +158,9 @@ jobs:
             exit 1
           fi
 
+          ls -la "$VCPKG_ROOT/installed/${{ matrix.platform.triplet }}/"
           cp -r "$VCPKG_ROOT/installed/${{ matrix.platform.triplet }}/" "${GITHUB_WORKSPACE}/dist/"
+          ls -la "${GITHUB_WORKSPACE}/dist/"
 
       - name: Build RocksDB (linux musl)
         if: ${{ matrix.platform.target == 'linux-x64-musl' || matrix.platform.target == 'linux-arm64-musl' }}

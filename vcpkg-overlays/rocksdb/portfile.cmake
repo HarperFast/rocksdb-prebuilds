@@ -2,9 +2,8 @@
 set(SOURCE_PATH "${CURRENT_BUILDTREES_DIR}/src")
 
 message(STATUS "===========================================================")
-message(STATUS "SOURCE_PATH     = $ENV{SOURCE_PATH}")
+message(STATUS "SOURCE_PATH     = ${SOURCE_PATH}")
 message(STATUS "ROCKSDB_DIR     = $ENV{ROCKSDB_DIR}")
-message(STATUS "VCPKG_CMD       = $ENV{VCPKG_CMD}")
 message(STATUS "REAL_VCPKG_ROOT = $ENV{REAL_VCPKG_ROOT}")
 message(STATUS "VCPKG_ROOT      = $ENV{VCPKG_ROOT}")
 message(STATUS "VCPKG_TRIPLET   = $ENV{VCPKG_TRIPLET}")
