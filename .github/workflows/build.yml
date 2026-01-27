@@ -206,7 +206,7 @@ jobs:
             "
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}
           path: dist/
