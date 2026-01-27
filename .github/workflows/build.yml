@@ -67,8 +67,8 @@ jobs:
             target: linux-x64-musl
             triplet: x64-linux-musl-static
           - runner: ubuntu-24.04-arm
-            target: linux-arm64-musl-static
-            triplet: arm64-linux-musl
+            target: linux-arm64-musl
+            triplet: arm64-linux-musl-static
           - runner: windows-latest
             target: windows-x64
             triplet: x64-windows-static-md
