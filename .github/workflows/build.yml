@@ -202,11 +202,20 @@ jobs:
               cp -r /workspace/vcpkg/installed/${{ matrix.platform.triplet }}/* /workspace/dist/
             "
 
+      - name: Create archive
+        id: archive
+        shell: bash
+        run: |
+          ARCHIVE="${GITHUB_WORKSPACE}/rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz"
+          cd "${GITHUB_WORKSPACE}/dist"
+          tar -cf - . | xz -9 > $ARCHIVE
+          echo "archive=$ARCHIVE" >> $GITHUB_OUTPUT
+
       - name: Upload artifact
         uses: actions/upload-artifact@v6
         with:
           name: rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}
-          path: dist/
+          path: ${{ steps.archive.outputs.archive }}
 
   release:
     name: Release
@@ -218,7 +227,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: artifacts
 
