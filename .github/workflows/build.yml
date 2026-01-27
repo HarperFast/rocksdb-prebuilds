@@ -10,34 +10,37 @@ jobs:
     name: Check for new release
     runs-on: ubuntu-latest
     outputs:
-      should_build: ${{ steps.check-release.outputs.should_build }}
-      version: ${{ steps.check-release.outputs.version }}
+      should_build: ${{ steps.check-build.outputs.should_build }}
+      version: ${{ steps.latest-rocksdb.outputs.version }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install vcpkg
+      - name: Get latest RocksDB release
+        id: latest-rocksdb
         shell: bash
         run: |
-          export VCPKG_ROOT="$HOME/vcpkg"
-          git clone https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
-          $VCPKG_ROOT/bootstrap-vcpkg.sh
-          $VCPKG_ROOT/vcpkg integrate install
+          URL="https://api.github.com/repos/facebook/rocksdb/releases/latest"
+          LATEST=$(curl -s -L -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -X GET "$URL" | jq -r '.tag_name' | tr -d 'v')
+          echo "Latest RocksDB release: $LATEST"
+          echo "version=$LATEST" >> $GITHUB_OUTPUT
 
-      - name: Checking if we should build
-        id: check-release
+      - name: Get latest prebuild
+        id: latest-prebuild
         shell: bash
         run: |
           URL="https://api.github.com/repos/harperdb/rocksdb-prebuilds/releases/latest"
-          CURRENT=$(curl -s -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -X GET "$URL" | jq -r '.tag_name' | tr -d 'v')
-          LATEST=$(jq -r ".versions[0].version" "$HOME/vcpkg/versions/r-/rocksdb.json")
+          LATEST=$(curl -s -L -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -X GET "$URL" | jq -r '.tag_name' | tr -d 'v')
+          echo "Latest RocksDB prebuild: $LATEST"
           echo "version=$LATEST" >> $GITHUB_OUTPUT
-          if [[ "${LATEST}" != "${CURRENT}" ]]; then
-            echo "Found new release: ${LATEST} (current: ${CURRENT})"
+
+      - name: Check if we should build
+        id: check-build
+        shell: bash
+        run: |
+          if [[ "${{ steps.latest-rocksdb.outputs.version }}" != "${{ steps.latest-prebuild.outputs.version }}" ]]; then
             echo "should_build=true" >> $GITHUB_OUTPUT
+            echo "New RocksDB release!"
           else
-            echo "No new releases"
             echo "should_build=false" >> $GITHUB_OUTPUT
+            echo "No new RocksDB release"
           fi
 
   build:
@@ -45,59 +48,171 @@ jobs:
     needs: [check]
     if: ${{ needs.check.outputs.should_build == 'true' }}
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         platform:
           - runner: macos-latest
-            target: arm64-osx
+            target: darwin-arm64
+            triplet: arm64-osx-static
           - runner: macos-latest
-            target: x64-osx
+            target: darwin-x64
+            triplet: x64-osx-static
+          - runner: ubuntu-22.04
+            target: linux-x64-glibc
+            triplet: x64-linux
+          - runner: ubuntu-22.04-arm
+            target: linux-arm64-glibc
+            triplet: arm64-linux
           - runner: ubuntu-latest
-            target: x64-linux
+            target: linux-x64-musl
+            triplet: x64-linux-musl-static
           - runner: ubuntu-24.04-arm
-            target: arm64-linux
+            target: linux-arm64-musl
+            triplet: arm64-linux-musl-static
           - runner: windows-latest
-            target: x64-windows
+            target: windows-x64
+            triplet: x64-windows-static-md
           - runner: windows-latest
-            target: arm64-windows
+            target: windows-arm64
+            triplet: arm64-windows-static-md
     runs-on: ${{ matrix.platform.runner }}
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/vcpkg
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install vcpkg
+      - name: Install cmake
+        if: ${{ matrix.platform.target != 'linux-x64-musl' && matrix.platform.target != 'linux-arm64-musl' }}
+        uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: 3.31.10
+
+      - name: Download and patch RocksDB
         shell: bash
         run: |
-          export VCPKG_ROOT="$HOME/vcpkg"
-          git clone https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
-          $VCPKG_ROOT/bootstrap-vcpkg.sh
-          $VCPKG_ROOT/vcpkg integrate install
+          set -e
+          set -o pipefail
 
-      - name: Configure static build
-        shell: bash
-        run: |
-          echo "set(VCPKG_LIBRARY_LINKAGE static)" > temp.txt
-          cat "$HOME/vcpkg/ports/rocksdb/portfile.cmake" >> temp.txt
-          mv -f temp.txt "$HOME/vcpkg/ports/rocksdb/portfile.cmake"
+          echo "Installing vcpkg..."
+          git clone https://github.com/microsoft/vcpkg
 
-      - name: Build RocksDB
-        shell: bash
+          URL="https://github.com/facebook/rocksdb/archive/refs/tags/v${{ needs.check.outputs.version }}.tar.gz"
+          echo "Downloading: $URL"
+          curl -L -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -o rocksdb.tar.gz "$URL"
+          tar -xzf rocksdb.tar.gz
+          cp windows/thirdparty.inc "${GITHUB_WORKSPACE}/rocksdb-${{ needs.check.outputs.version }}/"
+
+          mkdir dist
+
+          for patch in "${GITHUB_WORKSPACE}/vcpkg-overlays/rocksdb/patches"/*.patch; do
+            if [ -f "$patch" ]; then
+              echo "Applying patch: $patch"
+              patch -p1 -d "${GITHUB_WORKSPACE}/rocksdb-${{ needs.check.outputs.version }}" < "$patch"
+            fi
+          done
+
+      - name: Build RocksDB (macos/linux glibc/windows)
+        if: ${{ matrix.platform.target != 'linux-x64-musl' && matrix.platform.target != 'linux-arm64-musl' }}
+        timeout-minutes: 60
         env:
-          MACOSX_DEPLOYMENT_TARGET: "11.0"
+          ROCKSDB_DIR: ${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}
+          VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+          VCPKG_TRIPLET: ${{ matrix.platform.triplet }}
+        shell: bash
         run: |
-          $HOME/vcpkg/vcpkg install rocksdb:${{ matrix.platform.target }}
+          set -e
+          set -o pipefail
+
+          if [[ "${{ matrix.platform.target }}" == windows-* ]]; then
+            $VCPKG_ROOT/bootstrap-vcpkg.bat
+            VCPKG_CMD="$VCPKG_ROOT/vcpkg.exe"
+            mv "C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/vcpkg" "C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/vcpkg2"
+          else
+            $VCPKG_ROOT/bootstrap-vcpkg.sh
+            VCPKG_CMD="$VCPKG_ROOT/vcpkg"
+          fi
+
+          export REAL_VCPKG_ROOT=$VCPKG_ROOT
+          export VCPKG_KEEP_ENV_VARS="REAL_VCPKG_ROOT;ROCKSDB_DIR;VCPKG_CMD;VCPKG_ROOT;VCPKG_TRIPLET"
+
+          if ! $VCPKG_CMD install rocksdb \
+            --debug \
+            --triplet ${{ matrix.platform.triplet }} \
+            --overlay-ports="${GITHUB_WORKSPACE}/vcpkg-overlays" \
+            --overlay-triplets="${GITHUB_WORKSPACE}/vcpkg-triplets"; then
+            echo '=== Build failed, dumping logs ==='
+            echo '=== buildtrees/detect_compiler/config-${{ matrix.platform.triplet }}-out.log ==='
+            cat ${GITHUB_WORKSPACE}/vcpkg/buildtrees/detect_compiler/config-${{ matrix.platform.triplet }}-out.log 2>/dev/null || echo 'Log file not found'
+            echo '=== buildtrees/detect_compiler/config-${{ matrix.platform.triplet }}-rel-CMakeCache.txt.log ==='
+            cat ${GITHUB_WORKSPACE}/vcpkg/buildtrees/detect_compiler/config-${{ matrix.platform.triplet }}-rel-CMakeCache.txt.log 2>/dev/null || echo 'Log file not found'
+            echo '=== buildtrees/rocksdb/config-${{ matrix.platform.triplet }}-out.log ==='
+            cat ${GITHUB_WORKSPACE}/vcpkg/buildtrees/rocksdb/config-${{ matrix.platform.triplet }}-out.log 2>/dev/null || echo 'Log file not found'
+            echo '=== buildtrees/rocksdb/config-${{ matrix.platform.triplet }}-err.log ==='
+            cat ${GITHUB_WORKSPACE}/vcpkg/buildtrees/rocksdb/config-${{ matrix.platform.triplet }}-err.log 2>/dev/null || echo 'Log file not found'
+            echo '=== buildtrees/rocksdb/install-${{ matrix.platform.triplet }}-dbg-out.log ==='
+            cat ${GITHUB_WORKSPACE}/vcpkg/buildtrees/rocksdb/install-${{ matrix.platform.triplet }}-dbg-out.log 2>/dev/null || echo 'Log file not found'
+            echo '=== buildtrees/rocksdb/install-${{ matrix.platform.triplet }}-dbg-err.log ==='
+            cat ${GITHUB_WORKSPACE}/vcpkg/buildtrees/rocksdb/install-${{ matrix.platform.triplet }}-dbg-err.log 2>/dev/null || echo 'Log file not found'
+            exit 1
+          fi
+
+          cp -r "$VCPKG_ROOT/installed/${{ matrix.platform.triplet }}"/* "${GITHUB_WORKSPACE}/dist/"
+
+      - name: Build RocksDB (linux musl)
+        if: ${{ matrix.platform.target == 'linux-x64-musl' || matrix.platform.target == 'linux-arm64-musl' }}
+        shell: bash
+        run: |
+          # Build inside Alpine Docker container (musl)
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" \
+            -e ROCKSDB_DIR=/workspace/rocksdb-${{ needs.check.outputs.version }} \
+            -e VCPKG_FORCE_SYSTEM_BINARIES=1 \
+            -w /workspace \
+            alpine:latest \
+            sh -c "
+              set -e
+              set -o pipefail
+
+              apk add --no-cache \
+                build-base \
+                cmake \
+                curl \
+                git \
+                linux-headers \
+                musl-dev \
+                ninja \
+                pkgconf \
+                zip
+
+              /workspace/vcpkg/bootstrap-vcpkg.sh -musl
+
+              if ! /workspace/vcpkg/vcpkg install rocksdb \
+                --triplet ${{ matrix.platform.triplet }} \
+                --overlay-ports=/workspace/vcpkg-overlays \
+                --overlay-triplets=/workspace/vcpkg-triplets; then
+                echo '=== Build failed, dumping logs ==='
+                echo '=== install-${{ matrix.platform.triplet }}-dbg-out.log ==='
+                cat /workspace/vcpkg/buildtrees/rocksdb/install-${{ matrix.platform.triplet }}-dbg-out.log 2>/dev/null || echo 'Log file not found'
+                echo '=== install-${{ matrix.platform.triplet }}-dbg-err.log ==='
+                cat /workspace/vcpkg/buildtrees/rocksdb/install-${{ matrix.platform.triplet }}-dbg-err.log 2>/dev/null || echo 'Log file not found'
+                exit 1
+              fi
+
+              cp -r /workspace/vcpkg/installed/${{ matrix.platform.triplet }}/* /workspace/dist/
+            "
 
       - name: Create archive
         id: archive
         shell: bash
         run: |
-          ARCHIVE="${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz"
-          cd "$HOME/vcpkg/installed/${{ matrix.platform.target }}"
+          ARCHIVE="${GITHUB_WORKSPACE}/rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz"
+          cd "${GITHUB_WORKSPACE}/dist"
           tar -cf - . | xz -9 > $ARCHIVE
           echo "archive=$ARCHIVE" >> $GITHUB_OUTPUT
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}
           path: ${{ steps.archive.outputs.archive }}
@@ -105,13 +220,14 @@ jobs:
   release:
     name: Release
     needs: [check, build]
+    if: ${{ needs.check.outputs.should_build == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: artifacts
 
