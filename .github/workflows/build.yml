@@ -65,9 +65,9 @@ jobs:
             triplet: arm64-linux
           - runner: ubuntu-latest
             target: linux-x64-musl
-            triplet: x64-linux-musl
+            triplet: x64-linux-musl-static
           - runner: ubuntu-24.04-arm
-            target: linux-arm64-musl
+            target: linux-arm64-musl-static
             triplet: arm64-linux-musl
           - runner: windows-latest
             target: windows-x64
@@ -105,7 +105,7 @@ jobs:
 
           mkdir dist
 
-          for patch in "${GITHUB_WORKSPACE}/patches"/*.patch; do
+          for patch in "${GITHUB_WORKSPACE}/vcpkg-overlays/rocksdb/patches"/*.patch; do
             if [ -f "$patch" ]; then
               echo "Applying patch: $patch"
               patch -p1 -d "${GITHUB_WORKSPACE}/rocksdb-${{ needs.check.outputs.version }}" < "$patch"
