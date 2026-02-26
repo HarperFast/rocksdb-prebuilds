@@ -2,7 +2,7 @@ name: Automated RocksDB Builds
 
 on:
   schedule:
-    - cron: '30 2 * * *'
+    - cron: "30 2 * * *"
   workflow_dispatch:
 
 jobs:
@@ -71,9 +71,15 @@ jobs:
             triplet: arm64-linux-musl-static
           - runner: windows-latest
             target: windows-x64
+            triplet: x64-windows-static
+          - runner: windows-latest
+            target: windows-x64-static-md
             triplet: x64-windows-static-md
           - runner: windows-latest
             target: windows-arm64
+            triplet: arm64-windows-static
+          - runner: windows-latest
+            target: windows-arm64-statid-md
             triplet: arm64-windows-static-md
     runs-on: ${{ matrix.platform.runner }}
     env:
