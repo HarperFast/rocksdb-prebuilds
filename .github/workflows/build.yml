@@ -205,9 +205,6 @@ jobs:
                 tar \
                 zip
 
-              echo \"=== Bootstrapping vcpkg ===\"
-              /workspace/vcpkg/bootstrap-vcpkg.sh -musl
-
               echo \"=== Searching for FindLibCURL.cmake ===\"
               find . -name "FindLibCURL.cmake"
 
@@ -229,6 +226,9 @@ jobs:
                   echo 'endif()' >> \"\$FINDCURL\"
                 fi
               fi
+
+              echo \"=== Bootstrapping vcpkg ===\"
+              /workspace/vcpkg/bootstrap-vcpkg.sh -musl
 
               echo \"=== vcpkg directory after ===\"
               find /workspace/vcpkg/downloads || true
