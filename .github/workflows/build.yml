@@ -173,7 +173,7 @@ jobs:
             -v "${{ github.workspace }}:/workspace" \
             -e "ROCKSDB_DIR=/workspace/rocksdb-${{ needs.check.outputs.version }}" \
             -e VCPKG_FORCE_SYSTEM_BINARIES=1 \
-            -e VCPKG_TOOL_RELEASE_TAG=2025-12-05 \
+            -e VCPKG_TOOL_RELEASE_TAG=2025-11-19 \
             -w /workspace \
             alpine:latest \
             sh -c "
