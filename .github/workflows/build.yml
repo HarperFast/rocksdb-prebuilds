@@ -169,11 +169,11 @@ jobs:
         if: ${{ matrix.platform.target == 'linux-x64-musl' || matrix.platform.target == 'linux-arm64-musl' }}
         shell: bash
         run: |
+          echo "VCPKG_TOOL_RELEASE_TAG=2025-12-16" > ${{ github.workspace }}/vcpkg/scripts/vcpkg-tool-metadata.txt
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
             -e "ROCKSDB_DIR=/workspace/rocksdb-${{ needs.check.outputs.version }}" \
             -e VCPKG_FORCE_SYSTEM_BINARIES=1 \
-            -e VCPKG_TOOL_RELEASE_TAG=2025-11-19 \
             -w /workspace \
             alpine:latest \
             sh -c "
