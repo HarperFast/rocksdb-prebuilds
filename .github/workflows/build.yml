@@ -185,9 +185,6 @@ jobs:
               echo \"=== Architecture ===\"
               uname -m
 
-              echo \"=== vcpkg directory before ===\"
-              find /workspace/vcpkg/downloads || true
-
               echo \"=== Installing packages ===\"
               apk add --no-cache \
                 bash \
