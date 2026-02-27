@@ -171,9 +171,9 @@ jobs:
         run: |
           # Build inside Alpine Docker container (musl)
           # Explicitly set platform for ARM64 builds
-          PLATFORM_FLAG=\"\"
+          PLATFORM_FLAG=""
           if [[ \"${{ matrix.platform.target }}\" == \"linux-arm64-musl\" ]]; then
-            PLATFORM_FLAG=\"--platform linux/arm64\"
+            PLATFORM_FLAG="--platform linux/arm64"
           fi
 
           docker run --rm \
