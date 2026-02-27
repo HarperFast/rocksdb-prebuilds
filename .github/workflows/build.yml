@@ -178,6 +178,17 @@ jobs:
               set -e
               set -o pipefail
 
+              echo "=== ROCKSDB_DIR ==="
+              export ROCKSDB_DIR='/workspace/rocksdb-${{ needs.check.outputs.version }}'
+              echo \"\$ROCKSDB_DIR\"
+
+              echo "=== vcpkg directory before ==="
+              if [ -d /workspace/vcpkg/downloads ]; then
+                find /workspace/vcpkg/downloads
+              else
+                echo "vcpkg/downloads directory not found"
+              fi
+
               apk add --no-cache \
                 bash \
                 build-base \
@@ -194,17 +205,6 @@ jobs:
 
               echo "=== CMake ==="
               cmake --version
-
-              echo "=== ROCKSDB_DIR ==="
-              export ROCKSDB_DIR='/workspace/rocksdb-${{ needs.check.outputs.version }}'
-              echo \"\$ROCKSDB_DIR\"
-
-              echo "=== vcpkg directory before ==="
-              if [ -d /workspace/vcpkg/downloads ]; then
-                find /workspace/vcpkg/downloads
-              else
-                echo "vcpkg/downloads directory not found"
-              fi
 
               echo "=== Bootstrapping vcpkg ==="
               VCPKG_FORCE_SYSTEM_BINARIES=1 /workspace/vcpkg/bootstrap-vcpkg.sh -musl
