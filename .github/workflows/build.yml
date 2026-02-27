@@ -173,6 +173,7 @@ jobs:
             -v "${{ github.workspace }}:/workspace" \
             -e "ROCKSDB_DIR=/workspace/rocksdb-${{ needs.check.outputs.version }}" \
             -e VCPKG_FORCE_SYSTEM_BINARIES=1 \
+            -e VCPKG_TOOL_RELEASE_TAG=2025-12-16 \
             -w /workspace \
             alpine:latest \
             sh -c "
@@ -187,42 +188,15 @@ jobs:
 
               echo \"=== Installing packages ===\"
               apk add --no-cache \
-                bash \
                 build-base \
                 cmake \
                 curl \
-                curl-dev \
-                curl-static \
-                g++ \
                 git \
                 linux-headers \
                 musl-dev \
                 ninja \
                 pkgconf \
-                tar \
                 zip
-
-              echo \"=== Searching for FindLibCURL.cmake ===\"
-              find . -name "FindLibCURL.cmake"
-
-              if [ \"\$(uname -m)\" = \"aarch64\" ]; then
-                echo \"=== Patching vcpkg cmake for ARM64 ===\"
-                FINDCURL=/workspace/vcpkg/cmake/FindLibCURL.cmake
-                if [ -f \"\$FINDCURL\" ]; then
-                  # Comment out FetchContent_Populate for LibCURLHeaders to force pkg-config usage
-                  sed -i 's/FetchContent_Populate(LibCURLHeaders)/#FetchContent_Populate(LibCURLHeaders)/g' \"\$FINDCURL\"
-                  sed -i 's/set(LIBCURL_INCLUDE_DIRS \"\${libcurlheaders_SOURCE_DIR}\/include\")/#set(LIBCURL_INCLUDE_DIRS \"\${libcurlheaders_SOURCE_DIR}\/include\")/g' \"\$FINDCURL\"
-                  # Add pkg-config fallback
-                  echo '' >> \"\$FINDCURL\"
-                  echo 'if(NOT LIBCURL_INCLUDE_DIRS)' >> \"\$FINDCURL\"
-                  echo '  find_package(PkgConfig QUIET)' >> \"\$FINDCURL\"
-                  echo '  if(PKG_CONFIG_FOUND)' >> \"\$FINDCURL\"
-                  echo '    pkg_check_modules(PC_CURL QUIET libcurl)' >> \"\$FINDCURL\"
-                  echo '    set(LIBCURL_INCLUDE_DIRS \${PC_CURL_INCLUDE_DIRS})' >> \"\$FINDCURL\"
-                  echo '  endif()' >> \"\$FINDCURL\"
-                  echo 'endif()' >> \"\$FINDCURL\"
-                fi
-              fi
 
               echo \"=== Bootstrapping vcpkg ===\"
               /workspace/vcpkg/bootstrap-vcpkg.sh -musl
