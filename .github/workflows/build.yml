@@ -185,7 +185,7 @@ jobs:
 
               echo \"=== vcpkg directory before ===\"
               if [ -d /workspace/vcpkg/downloads ]; then
-                find /workspace/vcpkg/downloads
+                find /workspace/vcpkg/downloads || true
               else
                 echo "vcpkg/downloads directory not found"
               fi
@@ -211,7 +211,7 @@ jobs:
 
               echo \"=== vcpkg directory after ===\"
               if [ -d /workspace/vcpkg/downloads ]; then
-                find /workspace/vcpkg/downloads
+                find /workspace/vcpkg/downloads || true
               else
                 echo "vcpkg/downloads directory not found"
               fi
