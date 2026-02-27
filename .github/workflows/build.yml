@@ -169,15 +169,7 @@ jobs:
         if: ${{ matrix.platform.target == 'linux-x64-musl' || matrix.platform.target == 'linux-arm64-musl' }}
         shell: bash
         run: |
-          # Build inside Alpine Docker container (musl)
-          # Explicitly set platform for ARM64 builds
-          PLATFORM_FLAG=""
-          if [[ \"${{ matrix.platform.target }}\" == \"linux-arm64-musl\" ]]; then
-            PLATFORM_FLAG="--platform linux/arm64"
-          fi
-
           docker run --rm \
-            $PLATFORM_FLAG \
             -v "${{ github.workspace }}:/workspace" \
             -e "ROCKSDB_DIR=/workspace/rocksdb-${{ needs.check.outputs.version }}" \
             -e VCPKG_FORCE_SYSTEM_BINARIES=1 \
@@ -196,6 +188,7 @@ jobs:
               echo \"=== vcpkg directory before ===\"
               find /workspace/vcpkg/downloads || true
 
+              echo \"=== Installing packages ===\"
               apk add --no-cache \
                 bash \
                 build-base \
@@ -212,7 +205,32 @@ jobs:
                 tar \
                 zip
 
-              echo \"VCPKG_FORCE_SYSTEM_BINARIES=$VCPKG_FORCE_SYSTEM_BINARIES\"
+              export PKG_CONFIG_PATH=/usr/lib/pkgconfig:/usr/share/pkgconfig
+              export CURL_INCLUDE_DIR=/usr/include
+              export CURL_LIBRARY=/usr/lib/libcurl.so
+              export CMAKE_PREFIX_PATH=/usr
+              export CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH=ON
+
+              if [ \"\$(uname -m)\" = \"aarch64\" ]; then
+                echo \"=== Patching vcpkg cmake for ARM64 ===\"
+                FINDCURL=/workspace/vcpkg/cmake/FindLibCURL.cmake
+                ls -la /workspace/vcpkg || true
+                find /workspace/vcpkg/cmake/ || true
+                if [ -f \"\$FINDCURL\" ]; then
+                  # Comment out FetchContent_Populate for LibCURLHeaders to force pkg-config usage
+                  sed -i 's/FetchContent_Populate(LibCURLHeaders)/#FetchContent_Populate(LibCURLHeaders)/g' \"\$FINDCURL\"
+                  sed -i 's/set(LIBCURL_INCLUDE_DIRS \"\${libcurlheaders_SOURCE_DIR}\/include\")/#set(LIBCURL_INCLUDE_DIRS \"\${libcurlheaders_SOURCE_DIR}\/include\")/g' \"\$FINDCURL\"
+                  # Add pkg-config fallback
+                  echo '' >> \"\$FINDCURL\"
+                  echo 'if(NOT LIBCURL_INCLUDE_DIRS)' >> \"\$FINDCURL\"
+                  echo '  find_package(PkgConfig QUIET)' >> \"\$FINDCURL\"
+                  echo '  if(PKG_CONFIG_FOUND)' >> \"\$FINDCURL\"
+                  echo '    pkg_check_modules(PC_CURL QUIET libcurl)' >> \"\$FINDCURL\"
+                  echo '    set(LIBCURL_INCLUDE_DIRS \${PC_CURL_INCLUDE_DIRS})' >> \"\$FINDCURL\"
+                  echo '  endif()' >> \"\$FINDCURL\"
+                  echo 'endif()' >> \"\$FINDCURL\"
+                fi
+              fi
 
               echo \"=== Bootstrapping vcpkg ===\"
               /workspace/vcpkg/bootstrap-vcpkg.sh -musl
