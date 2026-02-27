@@ -184,11 +184,7 @@ jobs:
               echo \"\$ROCKSDB_DIR\"
 
               echo \"=== vcpkg directory before ===\"
-              if [ -d /workspace/vcpkg/downloads ]; then
-                find /workspace/vcpkg/downloads || true
-              else
-                echo "vcpkg/downloads directory not found"
-              fi
+              find /workspace/vcpkg/downloads || true
 
               apk add --no-cache \
                 bash \
@@ -210,11 +206,7 @@ jobs:
               /workspace/vcpkg/bootstrap-vcpkg.sh -musl
 
               echo \"=== vcpkg directory after ===\"
-              if [ -d /workspace/vcpkg/downloads ]; then
-                find /workspace/vcpkg/downloads || true
-              else
-                echo "vcpkg/downloads directory not found"
-              fi
+              find /workspace/vcpkg/downloads || true
 
               echo \"=== Installing RocksDB ===\"
               if ! /workspace/vcpkg/vcpkg install rocksdb \
