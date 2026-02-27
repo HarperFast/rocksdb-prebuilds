@@ -195,10 +195,10 @@ jobs:
                 tar \
                 zip
 
-              echo "ROCKSDB_DIR=${ROCKSDB_DIR}"
-              echo "VCPKG_FORCE_SYSTEM_BINARIES=${VCPKG_FORCE_SYSTEM_BINARIES}"
+              echo "ROCKSDB_DIR=$ROCKSDB_DIR"
+              echo "VCPKG_FORCE_SYSTEM_BINARIES=$VCPKG_FORCE_SYSTEM_BINARIES"
 
-              /workspace/vcpkg/bootstrap-vcpkg.sh -musl
+              /workspace/vcpkg/bootstrap-vcpkg.sh -musl -useSystemBinaries
 
               if ! /workspace/vcpkg/vcpkg install rocksdb \
                 --triplet ${{ matrix.platform.triplet }} \
