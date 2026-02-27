@@ -51,36 +51,36 @@ jobs:
       fail-fast: false
       matrix:
         platform:
-          # - runner: macos-latest
-          #   target: darwin-arm64
-          #   triplet: arm64-osx-static
-          # - runner: macos-latest
-          #   target: darwin-x64
-          #   triplet: x64-osx-static
-          # - runner: ubuntu-22.04
-          #   target: linux-x64-glibc
-          #   triplet: x64-linux
-          # - runner: ubuntu-22.04-arm
-          #   target: linux-arm64-glibc
-          #   triplet: arm64-linux
-          # - runner: ubuntu-latest
-          #   target: linux-x64-musl
-          #   triplet: x64-linux-musl-static
+          - runner: macos-latest
+            target: darwin-arm64
+            triplet: arm64-osx-static
+          - runner: macos-latest
+            target: darwin-x64
+            triplet: x64-osx-static
+          - runner: ubuntu-22.04
+            target: linux-x64-glibc
+            triplet: x64-linux
+          - runner: ubuntu-22.04-arm
+            target: linux-arm64-glibc
+            triplet: arm64-linux
+          - runner: ubuntu-latest
+            target: linux-x64-musl
+            triplet: x64-linux-musl-static
           - runner: ubuntu-24.04-arm
             target: linux-arm64-musl
             triplet: arm64-linux-musl-static
-          # - runner: windows-latest
-          #   target: windows-x64
-          #   triplet: x64-windows-static
-          # - runner: windows-latest
-          #   target: windows-x64-static-md
-          #   triplet: x64-windows-static-md
-          # - runner: windows-latest
-          #   target: windows-arm64
-          #   triplet: arm64-windows-static
-          # - runner: windows-latest
-          #   target: windows-arm64-statid-md
-          #   triplet: arm64-windows-static-md
+          - runner: windows-latest
+            target: windows-x64
+            triplet: x64-windows-static
+          - runner: windows-latest
+            target: windows-x64-static-md
+            triplet: x64-windows-static-md
+          - runner: windows-latest
+            target: windows-arm64
+            triplet: arm64-windows-static
+          - runner: windows-latest
+            target: windows-arm64-statid-md
+            triplet: arm64-windows-static-md
     runs-on: ${{ matrix.platform.runner }}
     env:
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
