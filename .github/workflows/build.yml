@@ -172,17 +172,18 @@ jobs:
           # Build inside Alpine Docker container (musl)
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
+            -e "ROCKSDB_DIR=/workspace/rocksdb-${{ needs.check.outputs.version }}" \
+            -e VCPKG_FORCE_SYSTEM_BINARIES=1 \
             -w /workspace \
             alpine:latest \
             sh -c "
               set -e
               set -o pipefail
 
-              echo "=== ROCKSDB_DIR ==="
-              export ROCKSDB_DIR='/workspace/rocksdb-${{ needs.check.outputs.version }}'
+              echo \"=== ROCKSDB_DIR ===\"
               echo \"\$ROCKSDB_DIR\"
 
-              echo "=== vcpkg directory before ==="
+              echo \"=== vcpkg directory before ===\"
               if [ -d /workspace/vcpkg/downloads ]; then
                 find /workspace/vcpkg/downloads
               else
@@ -203,20 +204,19 @@ jobs:
                 tar \
                 zip
 
-              echo "=== CMake ==="
-              cmake --version
+              echo \"VCPKG_FORCE_SYSTEM_BINARIES=$VCPKG_FORCE_SYSTEM_BINARIES\"
 
-              echo "=== Bootstrapping vcpkg ==="
-              VCPKG_FORCE_SYSTEM_BINARIES=1 /workspace/vcpkg/bootstrap-vcpkg.sh -musl
+              echo \"=== Bootstrapping vcpkg ===\"
+              /workspace/vcpkg/bootstrap-vcpkg.sh -musl
 
-              echo "=== vcpkg directory after ==="
+              echo \"=== vcpkg directory after ===\"
               if [ -d /workspace/vcpkg/downloads ]; then
                 find /workspace/vcpkg/downloads
               else
                 echo "vcpkg/downloads directory not found"
               fi
 
-              echo "=== Installing RocksDB ==="
+              echo \"=== Installing RocksDB ===\"
               if ! /workspace/vcpkg/vcpkg install rocksdb \
                 --triplet ${{ matrix.platform.triplet }} \
                 --overlay-ports=/workspace/vcpkg-overlays \
@@ -229,7 +229,6 @@ jobs:
                 exit 1
               fi
 
-              echo "=== Copying installed files ==="
               cp -r /workspace/vcpkg/installed/${{ matrix.platform.triplet }}/* /workspace/dist/
             "
 
