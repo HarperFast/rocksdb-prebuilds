@@ -194,7 +194,6 @@ jobs:
                 curl-dev \
                 g++ \
                 git \
-                libcurl-dev \
                 linux-headers \
                 musl-dev \
                 ninja \
