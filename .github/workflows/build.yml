@@ -170,7 +170,14 @@ jobs:
         shell: bash
         run: |
           # Build inside Alpine Docker container (musl)
+          # Explicitly set platform for ARM64 builds
+          PLATFORM_FLAG=\"\"
+          if [[ \"${{ matrix.platform.target }}\" == \"linux-arm64-musl\" ]]; then
+            PLATFORM_FLAG=\"--platform linux/arm64\"
+          fi
+
           docker run --rm \
+            $PLATFORM_FLAG \
             -v "${{ github.workspace }}:/workspace" \
             -e "ROCKSDB_DIR=/workspace/rocksdb-${{ needs.check.outputs.version }}" \
             -e VCPKG_FORCE_SYSTEM_BINARIES=1 \
@@ -183,6 +190,9 @@ jobs:
               echo \"=== ROCKSDB_DIR ===\"
               echo \"\$ROCKSDB_DIR\"
 
+              echo \"=== Architecture ===\"
+              uname -m
+
               echo \"=== vcpkg directory before ===\"
               find /workspace/vcpkg/downloads || true
 
@@ -192,6 +202,7 @@ jobs:
                 cmake \
                 curl \
                 curl-dev \
+                curl-static \
                 g++ \
                 git \
                 linux-headers \
