@@ -169,8 +169,10 @@ jobs:
         if: ${{ matrix.platform.target == 'linux-x64-musl' || matrix.platform.target == 'linux-arm64-musl' }}
         shell: bash
         run: |
-          echo "VCPKG_TOOL_RELEASE_TAG=2025-12-16" > ${{ github.workspace }}/vcpkg/scripts/vcpkg-tool-metadata.txt
-          echo "VCPKG_TOOL_SOURCE_SHA=c24b1fde8df8781cc9a55d206daf7a5c6d3315d32fb6e00513c198b8bd6c8036b17af95ebf35fcdb063cc7cdf125f2c1c3a5024b09d6e22e8197296cafc8c037" >> ${{ github.workspace }}/vcpkg/scripts/vcpkg-tool-metadata.txt
+          curl -L \
+            -o ${{ github.workspace }}/vcpkg/scripts/vcpkg-tool-metadata.txt \
+            https://raw.githubusercontent.com/toge/vcpkg/be2e197ea5bc32028dad3c651053ed926d91a2d7/scripts/vcpkg-tool-metadata.txt
+
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
             -e "ROCKSDB_DIR=/workspace/rocksdb-${{ needs.check.outputs.version }}" \
