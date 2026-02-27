@@ -92,7 +92,7 @@ jobs:
         if: ${{ matrix.platform.target != 'linux-x64-musl' && matrix.platform.target != 'linux-arm64-musl' }}
         uses: lukka/get-cmake@latest
         with:
-          cmakeVersion: 3.31.11
+          cmakeVersion: 3.31.10
 
       - name: Download and patch RocksDB
         shell: bash
@@ -192,6 +192,8 @@ jobs:
                 pkgconf \
                 tar \
                 zip
+
+              cmake --version
 
               export ROCKSDB_DIR='/workspace/rocksdb-${{ needs.check.outputs.version }}'
               echo \"ROCKSDB_DIR=\$ROCKSDB_DIR\"
