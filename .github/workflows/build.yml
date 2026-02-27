@@ -193,8 +193,8 @@ jobs:
                 tar \
                 zip
 
-              export ROCKSDB_DIR="/workspace/rocksdb-${{ needs.check.outputs.version }}"
-              echo "ROCKSDB_DIR=$ROCKSDB_DIR"
+              export ROCKSDB_DIR='/workspace/rocksdb-${{ needs.check.outputs.version }}'
+              echo \"ROCKSDB_DIR=\$ROCKSDB_DIR\"
 
               VCPKG_FORCE_SYSTEM_BINARIES=1 /workspace/vcpkg/bootstrap-vcpkg.sh -musl
 
