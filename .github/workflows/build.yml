@@ -193,10 +193,13 @@ jobs:
                 tar \
                 zip
 
+              echo "================================================"
               cmake --version
+              ninja --version
 
               export ROCKSDB_DIR='/workspace/rocksdb-${{ needs.check.outputs.version }}'
               echo \"ROCKSDB_DIR=\$ROCKSDB_DIR\"
+              echo "================================================"
 
               VCPKG_FORCE_SYSTEM_BINARIES=1 /workspace/vcpkg/bootstrap-vcpkg.sh -musl
 
