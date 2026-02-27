@@ -172,8 +172,7 @@ jobs:
           # Build inside Alpine Docker container (musl)
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
-            -e ROCKSDB_DIR=/workspace/rocksdb-${{ needs.check.outputs.version }} \
-            -e VCPKG_FORCE_SYSTEM_BINARIES=1 \
+            -e ROCKSDB_DIR="/workspace/rocksdb-${{ needs.check.outputs.version }}" \
             -w /workspace \
             alpine:latest \
             sh -c "
@@ -196,9 +195,8 @@ jobs:
                 zip
 
               echo "ROCKSDB_DIR=$ROCKSDB_DIR"
-              echo "VCPKG_FORCE_SYSTEM_BINARIES=$VCPKG_FORCE_SYSTEM_BINARIES"
 
-              /workspace/vcpkg/bootstrap-vcpkg.sh -musl -useSystemBinaries
+              VCPKG_FORCE_SYSTEM_BINARIES=1 /workspace/vcpkg/bootstrap-vcpkg.sh -musl -useSystemBinaries
 
               if ! /workspace/vcpkg/vcpkg install rocksdb \
                 --triplet ${{ matrix.platform.triplet }} \
