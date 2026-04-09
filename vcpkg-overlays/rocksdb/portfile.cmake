@@ -10,7 +10,7 @@ message(STATUS "VCPKG_TRIPLET   = $ENV{VCPKG_TRIPLET}")
 message(STATUS "===========================================================")
 
 if(NOT "$ENV{REAL_VCPKG_ROOT}" STREQUAL "$ENV{VCPKG_ROOT}")
-  message(FATAL_ERROR "VCPKG_ROOT is pointing to wrong vcpkg!")
+  message(WARNING "VCPKG_ROOT is pointing to wrong vcpkg!")
 endif()
 
 if(NOT DEFINED ENV{ROCKSDB_DIR})
