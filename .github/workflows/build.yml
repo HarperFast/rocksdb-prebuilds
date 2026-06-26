@@ -133,7 +133,16 @@ jobs:
           if [[ "${{ matrix.platform.target }}" == windows-* ]]; then
             $VCPKG_ROOT/bootstrap-vcpkg.bat
             VCPKG_CMD="$VCPKG_ROOT/vcpkg.exe"
-            mv "C:/Program Files/Microsoft Visual Studio/2026/Enterprise/VC/vcpkg" "C:/Program Files/Microsoft Visual Studio/2026/Enterprise/VC/vcpkg2"
+            # VS ships a bundled vcpkg that overrides VCPKG_ROOT; rename it if present.
+            # Path varies by VS version (2022 -> .../2022/..., 2026 -> .../18/...).
+            shopt -s nullglob
+            for vs_vcpkg in "C:/Program Files/Microsoft Visual Studio/"*/Enterprise/VC/vcpkg; do
+              if [[ -d "$vs_vcpkg" ]]; then
+                echo "Renaming VS bundled vcpkg to avoid overriding VCPKG_ROOT: $vs_vcpkg"
+                mv "$vs_vcpkg" "${vs_vcpkg}2"
+              fi
+            done
+            shopt -u nullglob
           else
             $VCPKG_ROOT/bootstrap-vcpkg.sh
             VCPKG_CMD="$VCPKG_ROOT/vcpkg"
