@@ -2,7 +2,13 @@
 
 Automated RocksDB prebuilt binaries for Linux, macOS, and Windows.
 
+The static RocksDB builds include LZ4 and zlib compression support.
+
 Releases: https://github.com/HarperFast/rocksdb-prebuilds/releases
+
+To rebuild an existing RocksDB version after changing its build configuration, manually run the
+workflow with that `rocksdb_version` and a numeric `prebuild_revision`. This publishes a revisioned
+prerelease such as `v11.1.2-prebuild.1` without replacing the immutable upstream-version release.
 
 | OS       | Arch                  | CRT Linkage     | Library Linkage | Filename |
 |----------|-----------------------|-----------------|-----------------|----------|

@@ -4,6 +4,15 @@ on:
   schedule:
     - cron: "30 2 * * *"
   workflow_dispatch:
+    inputs:
+      rocksdb_version:
+        description: RocksDB version to rebuild (defaults to the latest upstream release)
+        required: false
+        type: string
+      prebuild_revision:
+        description: Numeric prebuild revision for rebuilding an existing RocksDB version
+        required: false
+        type: string
 
 jobs:
   check:
@@ -12,13 +21,19 @@ jobs:
     outputs:
       should_build: ${{ steps.check-build.outputs.should_build }}
       version: ${{ steps.latest-rocksdb.outputs.version }}
+      release_version: ${{ steps.check-build.outputs.release_version }}
     steps:
       - name: Get latest RocksDB release
         id: latest-rocksdb
         shell: bash
         run: |
-          URL="https://api.github.com/repos/facebook/rocksdb/releases/latest"
-          LATEST=$(curl -s -L -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -X GET "$URL" | jq -r '.tag_name' | tr -d 'v')
+          REQUESTED="${{ inputs.rocksdb_version }}"
+          if [[ -n "$REQUESTED" ]]; then
+            LATEST="${REQUESTED#v}"
+          else
+            URL="https://api.github.com/repos/facebook/rocksdb/releases/latest"
+            LATEST=$(curl -s -L -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -X GET "$URL" | jq -r '.tag_name' | tr -d 'v')
+          fi
           echo "Latest RocksDB release: $LATEST"
           echo "version=$LATEST" >> $GITHUB_OUTPUT
 
@@ -35,13 +50,42 @@ jobs:
         id: check-build
         shell: bash
         run: |
-          if [[ "${{ steps.latest-rocksdb.outputs.version }}" != "${{ steps.latest-prebuild.outputs.version }}" ]]; then
-            echo "should_build=true" >> $GITHUB_OUTPUT
+          ROCKSDB_VERSION="${{ steps.latest-rocksdb.outputs.version }}"
+          REVISION="${{ inputs.prebuild_revision }}"
+          SHOULD_BUILD=false
+
+          if [[ -n "$REVISION" ]]; then
+            if [[ ! "$REVISION" =~ ^[0-9]+$ ]]; then
+              echo "prebuild_revision must be numeric" >&2
+              exit 1
+            fi
+            RELEASE_VERSION="${ROCKSDB_VERSION}-prebuild.${REVISION}"
+            SHOULD_BUILD=true
+            echo "Rebuilding RocksDB v$ROCKSDB_VERSION as v$RELEASE_VERSION"
+          elif [[ "$ROCKSDB_VERSION" != "${{ steps.latest-prebuild.outputs.version }}" ]]; then
+            RELEASE_VERSION="$ROCKSDB_VERSION"
+            SHOULD_BUILD=true
             echo "New RocksDB release!"
           else
-            echo "should_build=false" >> $GITHUB_OUTPUT
+            RELEASE_VERSION="$ROCKSDB_VERSION"
             echo "No new RocksDB release"
           fi
+
+          if [[ "$SHOULD_BUILD" == true ]]; then
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/releases/tags/v$RELEASE_VERSION")
+            if [[ "$STATUS" == 200 ]]; then
+              echo "Release v$RELEASE_VERSION already exists; choose a new revision" >&2
+              exit 1
+            elif [[ "$STATUS" != 404 ]]; then
+              echo "Unable to check release v$RELEASE_VERSION (HTTP $STATUS)" >&2
+              exit 1
+            fi
+          fi
+
+          echo "should_build=$SHOULD_BUILD" >> $GITHUB_OUTPUT
+          echo "release_version=$RELEASE_VERSION" >> $GITHUB_OUTPUT
 
   build:
     name: Build
@@ -232,11 +276,20 @@ jobs:
               cp -r /workspace/vcpkg/installed/${{ matrix.platform.triplet }}/* /workspace/dist/
             "
 
+      - name: Verify LZ4 is packaged
+        shell: bash
+        run: |
+          if [[ "${{ matrix.platform.target }}" == windows-* ]]; then
+            test -f "${GITHUB_WORKSPACE}/dist/lib/lz4.lib"
+          else
+            test -f "${GITHUB_WORKSPACE}/dist/lib/liblz4.a"
+          fi
+
       - name: Create archive
         id: archive
         shell: bash
         run: |
-          ARCHIVE="${GITHUB_WORKSPACE}/rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}.tar.xz"
+          ARCHIVE="${GITHUB_WORKSPACE}/rocksdb-${{ needs.check.outputs.release_version }}-${{ matrix.platform.target }}.tar.xz"
           cd "${GITHUB_WORKSPACE}/dist"
           tar -cf - . | xz -9 > $ARCHIVE
           echo "archive=$ARCHIVE" >> $GITHUB_OUTPUT
@@ -244,7 +297,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v6
         with:
-          name: rocksdb-${{ needs.check.outputs.version }}-${{ matrix.platform.target }}
+          name: rocksdb-${{ needs.check.outputs.release_version }}-${{ matrix.platform.target }}
           path: ${{ steps.archive.outputs.archive }}
 
   release:
@@ -270,18 +323,19 @@ jobs:
 
       - name: Upload artifacts to S3
         run: |
-          aws s3 cp artifacts/ s3://harper-artifacts/rocksdb-prebuilds/v${{ needs.check.outputs.version }}/ --recursive
+          aws s3 cp artifacts/ s3://harper-artifacts/rocksdb-prebuilds/v${{ needs.check.outputs.release_version }}/ --recursive
 
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/**/*.tar.xz
           body: |
-            Automated prebuilds for RocksDB v${{ needs.check.outputs.version }}
+            Automated prebuilds for RocksDB v${{ needs.check.outputs.version }}.
 
             Release notes: https://github.com/facebook/rocksdb/releases/tag/v${{ needs.check.outputs.version }}
-          name: RocksDB v${{ needs.check.outputs.version }}
-          tag_name: v${{ needs.check.outputs.version }}
+          name: RocksDB prebuild v${{ needs.check.outputs.release_version }}
+          tag_name: v${{ needs.check.outputs.release_version }}
+          prerelease: ${{ inputs.prebuild_revision != '' }}
           token: ${{ secrets.GH_TOKEN }}
 
   on-release-success:
@@ -298,13 +352,13 @@ jobs:
           payload: |
             {
               "channel": "${{ secrets.SLACK_CI_CHANNEL_ID }}",
-              "text": "New RocksDB prebuild: v${{ needs.check.outputs.version }}",
+              "text": "New RocksDB prebuild: v${{ needs.check.outputs.release_version }}",
               "blocks": [
                 {
                   "type": "header",
                   "text": {
                     "type": "plain_text",
-                    "text": "New RocksDB prebuild: v${{ needs.check.outputs.version }}"
+                    "text": "New RocksDB prebuild: v${{ needs.check.outputs.release_version }}"
                   }
                 },
                 {
@@ -320,7 +374,7 @@ jobs:
                     },
                     {
                       "type": "mrkdwn",
-                      "text": "<https://github.com/harperdb/rocksdb-prebuilds/releases/tag/v${{ needs.check.outputs.version }}|GitHub Release>"
+                      "text": "<https://github.com/harperdb/rocksdb-prebuilds/releases/tag/v${{ needs.check.outputs.release_version }}|GitHub Release>"
                     }
                   ]
                 }
@@ -335,8 +389,8 @@ jobs:
           token: ${{ secrets.GH_TOKEN }}
           client-payload: |
             {
-              "url": "https://github.com/harperdb/rocksdb-prebuilds/releases/tag/v${{ needs.check.outputs.version }}",
-              "version": "${{ needs.check.outputs.version }}"
+              "url": "https://github.com/harperdb/rocksdb-prebuilds/releases/tag/v${{ needs.check.outputs.release_version }}",
+              "version": "${{ needs.check.outputs.release_version }}"
             }
 
   on-release-failure:
@@ -353,13 +407,13 @@ jobs:
           payload: |
             {
               "channel": "${{ secrets.SLACK_CI_CHANNEL_ID }}",
-              "text": "RocksDB prebuild failed: v${{ needs.check.outputs.version }}",
+              "text": "RocksDB prebuild failed: v${{ needs.check.outputs.release_version }}",
               "blocks": [
                 {
                   "type": "header",
                   "text": {
                     "type": "plain_text",
-                    "text": "RocksDB prebuild failed: v${{ needs.check.outputs.version }}"
+                    "text": "RocksDB prebuild failed: v${{ needs.check.outputs.release_version }}"
                   }
                 },
                 {
