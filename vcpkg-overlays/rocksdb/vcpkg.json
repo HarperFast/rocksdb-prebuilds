@@ -16,6 +16,7 @@
     }
   ],
   "default-features": [
+    "lz4",
     "zlib"
   ],
   "features": {
