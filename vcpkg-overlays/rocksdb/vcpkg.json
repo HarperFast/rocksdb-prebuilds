@@ -16,8 +16,11 @@
     }
   ],
   "default-features": [
+    "bzip2",
     "lz4",
-    "zlib"
+    "snappy",
+    "zlib",
+    "zstd"
   ],
   "features": {
     "bzip2": {
