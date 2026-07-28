@@ -2,7 +2,7 @@
 
 Automated RocksDB prebuilt binaries for Linux, macOS, and Windows.
 
-The static RocksDB builds include LZ4 and zlib compression support.
+The static RocksDB builds include bzip2, lz4, snappy, zlib, and zstd compression support.
 
 Releases: https://github.com/HarperFast/rocksdb-prebuilds/releases
 
