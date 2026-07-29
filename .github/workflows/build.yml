@@ -382,6 +382,7 @@ jobs:
             }
 
       - name: Repository Dispatch
+        if: ${{ inputs.prerelease_revision == '' }}
         uses: peter-evans/repository-dispatch@v3
         with:
           event-type: new-rocksdb-prebuild
