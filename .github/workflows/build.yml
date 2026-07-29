@@ -123,7 +123,7 @@ jobs:
             target: windows-arm64
             triplet: arm64-windows-static
           - runner: windows-latest
-            target: windows-arm64-statid-md
+            target: windows-arm64-static-md
             triplet: arm64-windows-static-md
     runs-on: ${{ matrix.platform.runner }}
     env:
