@@ -6,11 +6,11 @@ on:
   workflow_dispatch:
     inputs:
       rocksdb_version:
-        description: RocksDB version to rebuild (defaults to the latest upstream release)
+        description: RocksDB version to rebuild (defaults to the latest official release)
         required: false
         type: string
-      prebuild_revision:
-        description: Numeric prebuild revision for rebuilding an existing RocksDB version
+      prerelease_revision:
+        description: Numeric prerelease revision for publishing a prerelease build of a RocksDB version (e.g. 11.1.2-1)
         required: false
         type: string
 
@@ -51,17 +51,17 @@ jobs:
         shell: bash
         run: |
           ROCKSDB_VERSION="${{ steps.latest-rocksdb.outputs.version }}"
-          REVISION="${{ inputs.prebuild_revision }}"
+          REVISION="${{ inputs.prerelease_revision }}"
           SHOULD_BUILD=false
 
           if [[ -n "$REVISION" ]]; then
             if [[ ! "$REVISION" =~ ^[0-9]+$ ]]; then
-              echo "prebuild_revision must be numeric" >&2
+              echo "prerelease_revision must be numeric" >&2
               exit 1
             fi
-            RELEASE_VERSION="${ROCKSDB_VERSION}-prebuild.${REVISION}"
+            RELEASE_VERSION="${ROCKSDB_VERSION}-${REVISION}"
             SHOULD_BUILD=true
-            echo "Rebuilding RocksDB v$ROCKSDB_VERSION as v$RELEASE_VERSION"
+            echo "Building RocksDB v$ROCKSDB_VERSION prerelease as v$RELEASE_VERSION"
           elif [[ "$ROCKSDB_VERSION" != "${{ steps.latest-prebuild.outputs.version }}" ]]; then
             RELEASE_VERSION="$ROCKSDB_VERSION"
             SHOULD_BUILD=true
@@ -335,7 +335,7 @@ jobs:
             Release notes: https://github.com/facebook/rocksdb/releases/tag/v${{ needs.check.outputs.version }}
           name: RocksDB prebuild v${{ needs.check.outputs.release_version }}
           tag_name: v${{ needs.check.outputs.release_version }}
-          prerelease: ${{ inputs.prebuild_revision != '' }}
+          prerelease: ${{ inputs.prerelease_revision != '' }}
           token: ${{ secrets.GH_TOKEN }}
 
   on-release-success:
