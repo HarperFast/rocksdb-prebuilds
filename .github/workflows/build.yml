@@ -10,7 +10,7 @@ on:
         required: false
         type: string
       prerelease_revision:
-        description: Numeric prerelease revision for publishing a prerelease build of a RocksDB version (e.g. 11.1.2-1)
+        description: Numeric prerelease revision for publishing a prerelease build of a RocksDB version (e.g. `1` for v11.1.2-1 or `rc2` for v11.1.2-rc2)
         required: false
         type: string
 
