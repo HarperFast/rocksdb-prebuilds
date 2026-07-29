@@ -333,7 +333,7 @@ jobs:
             Automated prebuilds for RocksDB v${{ needs.check.outputs.version }}.
 
             Release notes: https://github.com/facebook/rocksdb/releases/tag/v${{ needs.check.outputs.version }}
-          name: RocksDB prebuild v${{ needs.check.outputs.release_version }}
+          name: RocksDB v${{ needs.check.outputs.release_version }}
           tag_name: v${{ needs.check.outputs.release_version }}
           prerelease: ${{ inputs.prerelease_revision != '' }}
           token: ${{ secrets.GH_TOKEN }}
