@@ -1,12 +1,12 @@
- CMakeLists.txt               | 33 +++++++++++++++------------------
- cmake/RocksDBConfig.cmake.in | 11 ++++++++---
- 2 files changed, 23 insertions(+), 21 deletions(-)
+ CMakeLists.txt               | 29 +++++++++++++----------------
+ cmake/RocksDBConfig.cmake.in |  9 +++++++--
+ 2 files changed, 20 insertions(+), 18 deletions(-)
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 5cfc1b480..a18af5817 100644
+index 7b68431..772f2e5 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -82,7 +82,7 @@ endif()
+@@ -111,7 +111,7 @@ endif()
 
  include(CMakeDependentOption)
 
@@ -15,7 +15,7 @@ index 5cfc1b480..a18af5817 100644
    option(WITH_GFLAGS "build with GFlags" OFF)
    option(WITH_XPRESS "build with windows built in compression" OFF)
    option(ROCKSDB_SKIP_THIRDPARTY "skip thirdparty.inc" OFF)
-@@ -131,10 +131,7 @@ else()
+@@ -165,10 +165,7 @@ else()
    endif()
 
    if(WITH_SNAPPY)
@@ -27,7 +27,7 @@ index 5cfc1b480..a18af5817 100644
      add_definitions(-DSNAPPY)
      list(APPEND THIRDPARTY_LIBS Snappy::snappy)
    endif()
-@@ -158,16 +155,19 @@ else()
+@@ -192,16 +189,19 @@ else()
    endif()
 
    if(WITH_LZ4)
@@ -51,7 +51,7 @@ index 5cfc1b480..a18af5817 100644
    endif()
  endif()
 
-@@ -307,11 +307,10 @@ int main() {
+@@ -352,11 +352,10 @@ int main() {
  endif()
 
  if (WITH_LIBURING)
@@ -67,19 +67,7 @@ index 5cfc1b480..a18af5817 100644
  endif()
 
  # Reset the required flags
-@@ -377,9 +376,9 @@ endif()
-
- option(WITH_TBB "build with Threading Building Blocks (TBB)" OFF)
- if(WITH_TBB)
--  find_package(TBB REQUIRED)
-+  find_package(TBB CONFIG REQUIRED)
-   add_definitions(-DTBB)
--  list(APPEND THIRDPARTY_LIBS TBB::TBB)
-+  list(APPEND THIRDPARTY_LIBS TBB::tbb)
- endif()
-
- # Stall notifications eat some performance from inserts
-@@ -1197,8 +1196,6 @@ if(NOT WIN32 OR ROCKSDB_INSTALL_ON_WINDOWS)
+@@ -1393,8 +1392,6 @@ if(NOT WIN32 OR ROCKSDB_INSTALL_ON_WINDOWS)
      endforeach()
    endforeach()
 
@@ -89,10 +77,10 @@ index 5cfc1b480..a18af5817 100644
      TARGETS ${ROCKSDB_STATIC_LIB}
      EXPORT RocksDBTargets
 diff --git a/cmake/RocksDBConfig.cmake.in b/cmake/RocksDBConfig.cmake.in
-index 0bd14be11..a420d8bfe 100644
+index bab7e8e..1277d9a 100644
 --- a/cmake/RocksDBConfig.cmake.in
 +++ b/cmake/RocksDBConfig.cmake.in
-@@ -33,11 +33,11 @@
+@@ -33,17 +33,22 @@ if(@WITH_BZ2@)
  endif()
 
  if(@WITH_LZ4@)
@@ -106,12 +94,7 @@ index 0bd14be11..a420d8bfe 100644
  endif()
 
  if(@WITH_NUMA@)
-@@ -45,9 +45,14 @@
- endif()
-
- if(@WITH_TBB@)
--  find_dependency(TBB)
-+  find_dependency(TBB CONFIG)
+   find_dependency(NUMA)
  endif()
 
 +if(@WITH_LIBURING@)
@@ -120,3 +103,5 @@ index 0bd14be11..a420d8bfe 100644
 +endif()
 +
  find_dependency(Threads)
+
+ include("${CMAKE_CURRENT_LIST_DIR}/RocksDBTargets.cmake")
