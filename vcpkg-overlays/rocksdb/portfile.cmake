@@ -36,7 +36,6 @@ vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
     "zstd" WITH_ZSTD
     "bzip2" WITH_BZ2
     "numa" WITH_NUMA
-    "tbb" WITH_TBB
 )
 
 message(STATUS "Configuring RocksDB...")
