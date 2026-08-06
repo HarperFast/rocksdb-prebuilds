@@ -222,10 +222,6 @@ jobs:
         if: ${{ matrix.platform.target == 'linux-x64-musl' || matrix.platform.target == 'linux-arm64-musl' }}
         shell: bash
         run: |
-          curl -L \
-            -o ${{ github.workspace }}/vcpkg/scripts/vcpkg-tool-metadata.txt \
-            https://raw.githubusercontent.com/toge/vcpkg/be2e197ea5bc32028dad3c651053ed926d91a2d7/scripts/vcpkg-tool-metadata.txt
-
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
             -e "ROCKSDB_DIR=/workspace/rocksdb-${{ needs.check.outputs.version }}" \
