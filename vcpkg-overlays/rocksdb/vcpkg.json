@@ -66,12 +66,6 @@
         }
       ]
     },
-    "tbb": {
-      "description": "build with Threading Building Blocks (TBB)",
-      "dependencies": [
-        "tbb"
-      ]
-    },
     "zlib": {
       "description": "build with zlib",
       "dependencies": [
