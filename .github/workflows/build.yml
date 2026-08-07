@@ -145,7 +145,11 @@ jobs:
           set -o pipefail
 
           echo "Installing vcpkg..."
-          git clone https://github.com/microsoft/vcpkg
+          # Pin vcpkg to a baseline release for reproducible dependency builds.
+          # 2026.06.24 is the last release before vcpkg's scripts began requiring
+          # CMake's string(JSON ... STRING_ENCODE) (4.x), which the CMake available
+          # in these runners (3.31.10 / Alpine musl) does not provide.
+          git clone --branch 2026.06.24 https://github.com/microsoft/vcpkg
 
           URL="https://github.com/facebook/rocksdb/archive/refs/tags/v${{ needs.check.outputs.version }}.tar.gz"
           echo "Downloading: $URL"
