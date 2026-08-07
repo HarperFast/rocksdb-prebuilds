@@ -22,20 +22,60 @@ jobs:
       should_build: ${{ steps.check-build.outputs.should_build }}
       version: ${{ steps.latest-rocksdb.outputs.version }}
       release_version: ${{ steps.check-build.outputs.release_version }}
+      mismatch_note: ${{ steps.latest-rocksdb.outputs.mismatch_note }}
     steps:
       - name: Get latest RocksDB release
         id: latest-rocksdb
         shell: bash
         run: |
+          set -euo pipefail
           REQUESTED="${{ inputs.rocksdb_version }}"
           if [[ -n "$REQUESTED" ]]; then
-            LATEST="${REQUESTED#v}"
+            TAG="${REQUESTED#v}"
           else
             URL="https://api.github.com/repos/facebook/rocksdb/releases/latest"
-            LATEST=$(curl -s -L -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -X GET "$URL" | jq -r '.tag_name' | tr -d 'v')
+            TAG=$(curl -s -L -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -X GET "$URL" | jq -r '.tag_name' | tr -d 'v')
           fi
-          echo "Latest RocksDB release: $LATEST"
-          echo "version=$LATEST" >> $GITHUB_OUTPUT
+          echo "Latest RocksDB release tag: v$TAG"
+
+          # Derive the published version from the bundled version.h, not the tag name.
+          # version.h is what the compiled library (and rocksdb-js) actually reports, so
+          # it is our source of truth. Upstream has shipped tags whose name disagrees with
+          # version.h (e.g. the v11.8.0 tag actually contains 11.8.1).
+          VERSION_H_URL="https://raw.githubusercontent.com/facebook/rocksdb/v${TAG}/include/rocksdb/version.h"
+          VERSION_H="$(curl -sfL "$VERSION_H_URL")"
+          MAJOR="$(printf '%s\n' "$VERSION_H" | sed -n 's/^#define ROCKSDB_MAJOR \([0-9][0-9]*\).*/\1/p')"
+          MINOR="$(printf '%s\n' "$VERSION_H" | sed -n 's/^#define ROCKSDB_MINOR \([0-9][0-9]*\).*/\1/p')"
+          PATCH="$(printf '%s\n' "$VERSION_H" | sed -n 's/^#define ROCKSDB_PATCH \([0-9][0-9]*\).*/\1/p')"
+          if [[ -z "$MAJOR" || -z "$MINOR" || -z "$PATCH" ]]; then
+            echo "Failed to parse version.h from $VERSION_H_URL" >&2
+            printf '%s\n' "$VERSION_H" >&2
+            exit 1
+          fi
+          VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          echo "Version from version.h: $VERSION"
+
+          MISMATCH_NOTE=""
+          if [[ "$VERSION" != "$TAG" ]]; then
+            MISMATCH_NOTE="**⚠️ Version mismatch:** upstream RocksDB tag v${TAG} does not match its bundled version.h (${VERSION}). This prebuild was built from the v${TAG} tag but is published as v${VERSION} to match the version the compiled library reports."
+            echo "::warning title=RocksDB version mismatch::tag v${TAG} != version.h ${VERSION}; publishing as v${VERSION}"
+            echo "=================================================================="
+            echo "  RocksDB VERSION MISMATCH"
+            echo "  upstream tag : v${TAG}"
+            echo "  version.h    : ${VERSION}"
+            echo "  Publishing as v${VERSION} (version.h is the source of truth)."
+            echo "=================================================================="
+          fi
+
+          # version = the upstream tag (used to download the source and link to the
+          # upstream release); version_h = the version we publish as.
+          echo "version=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version_h=$VERSION" >> "$GITHUB_OUTPUT"
+          {
+            echo "mismatch_note<<MMEOF"
+            echo "$MISMATCH_NOTE"
+            echo "MMEOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Get latest prebuild
         id: latest-prebuild
@@ -50,7 +90,10 @@ jobs:
         id: check-build
         shell: bash
         run: |
-          ROCKSDB_VERSION="${{ steps.latest-rocksdb.outputs.version }}"
+          # Compare and publish using the version.h-derived version; the tag is only
+          # the download locator.
+          ROCKSDB_VERSION="${{ steps.latest-rocksdb.outputs.version_h }}"
+          TAG_VERSION="${{ steps.latest-rocksdb.outputs.version }}"
           REVISION="${{ inputs.prerelease_revision }}"
           SHOULD_BUILD=false
 
@@ -61,7 +104,7 @@ jobs:
             fi
             RELEASE_VERSION="${ROCKSDB_VERSION}-${REVISION}"
             SHOULD_BUILD=true
-            echo "Building RocksDB v$ROCKSDB_VERSION prerelease as v$RELEASE_VERSION"
+            echo "Building RocksDB v$ROCKSDB_VERSION (tag v$TAG_VERSION) prerelease as v$RELEASE_VERSION"
           elif [[ "$ROCKSDB_VERSION" != "${{ steps.latest-prebuild.outputs.version }}" ]]; then
             RELEASE_VERSION="$ROCKSDB_VERSION"
             SHOULD_BUILD=true
@@ -330,9 +373,11 @@ jobs:
         with:
           files: artifacts/**/*.tar.xz
           body: |
-            Automated prebuilds for RocksDB v${{ needs.check.outputs.version }}.
+            Automated prebuilds for RocksDB v${{ needs.check.outputs.release_version }}.
 
-            Release notes: https://github.com/facebook/rocksdb/releases/tag/v${{ needs.check.outputs.version }}
+            ${{ needs.check.outputs.mismatch_note }}
+
+            Built from upstream tag v${{ needs.check.outputs.version }} — release notes: https://github.com/facebook/rocksdb/releases/tag/v${{ needs.check.outputs.version }}
           name: RocksDB v${{ needs.check.outputs.release_version }}
           tag_name: v${{ needs.check.outputs.release_version }}
           prerelease: ${{ inputs.prerelease_revision != '' }}
