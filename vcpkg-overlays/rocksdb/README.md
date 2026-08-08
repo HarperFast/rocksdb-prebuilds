@@ -1,6 +1,16 @@
-These patches are from the vcpkg repository and licensed under the MIT license.
+`patches/0001-fix-dependencies.patch` is from the vcpkg repository and licensed under the MIT
+license (notice below).
 
 https://github.com/toge/vcpkg/tree/master/ports/rocksdb
+
+Patches numbered 0002 and above are downstream (HarperFast) changes to RocksDB itself, applied to
+the upstream release tarball by `.github/workflows/build.yml` before the vcpkg build. Each carries
+a header describing what it changes and why. They must be rebased when the pinned RocksDB version
+moves — `patch -p1 --dry-run` against a fresh tarball is the check.
+
+- `0002-cf-blob-dir.patch` — adds `AdvancedColumnFamilyOptions::blob_dir` so blob files can live on
+  a different volume than the SST files, and defines `ROCKSDB_HAS_CF_BLOB_DIR` for feature
+  detection. Consumed by `@harperfast/rocksdb-js` via its `blobs.dir` open option.
 
 MIT License
 
