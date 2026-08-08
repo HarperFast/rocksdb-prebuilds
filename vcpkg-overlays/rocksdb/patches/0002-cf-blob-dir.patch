@@ -71,24 +71,26 @@ index d8d39a2..6e6d8b8 100644
    FileSystem* const fs = immutable_options.fs.get();
    assert(fs);
 diff --git a/db/column_family.cc b/db/column_family.cc
-index a0cb190..12c8fd5 100644
+index a0cb190..c9030c7 100644
 --- a/db/column_family.cc
 +++ b/db/column_family.cc
-@@ -599,6 +599,13 @@ std::vector<std::string> ColumnFamilyData::GetDbPaths() const {
+@@ -599,6 +599,15 @@ std::vector<std::string> ColumnFamilyData::GetDbPaths() const {
    for (const DbPath& db_path : ioptions_.cf_paths) {
      paths.emplace_back(db_path.path);
    }
 +  // Env path registration must cover the blob directory too when blob_dir puts
 +  // it outside cf_paths; Register and Unregister both read this, so it stays
-+  // balanced.
-+  const std::string& blob_dir = ioptions_.GetBlobDir();
-+  if (std::find(paths.begin(), paths.end(), blob_dir) == paths.end()) {
-+    paths.emplace_back(blob_dir);
++  // balanced. Read the raw field rather than GetBlobDir(): an unset blob_dir
++  // resolves to cf_paths.front(), which the loop above already covers, and
++  // callers may hold options whose cf_paths was never populated.
++  if (!ioptions_.blob_dir.empty() &&
++      std::find(paths.begin(), paths.end(), ioptions_.blob_dir) == paths.end()) {
++    paths.emplace_back(ioptions_.blob_dir);
 +  }
    return paths;
  }
  
-@@ -1749,9 +1756,33 @@ Status ColumnFamilyData::AddDirectories(
+@@ -1749,9 +1758,33 @@ Status ColumnFamilyData::AddDirectories(
      }
    }
    assert(data_dirs_.size() == ioptions_.cf_paths.size());
@@ -511,14 +513,24 @@ index f861fba..1b9451a 100644
    cf_opts->sst_partitioner_factory = ioptions.sst_partitioner_factory;
    cf_opts->blob_cache = ioptions.blob_cache;
 diff --git a/options/options_settable_test.cc b/options/options_settable_test.cc
-index 4ccc790..34dda1c 100644
+index 4ccc790..febdf4d 100644
 --- a/options/options_settable_test.cc
 +++ b/options/options_settable_test.cc
-@@ -569,6 +569,7 @@ TEST_F(OptionsSettableTest, ColumnFamilyOptionsAllFieldsSettable) {
-        sizeof(std::shared_ptr<TableFactory>)},
-       {offsetof(struct ColumnFamilyOptions, cf_paths),
-        sizeof(std::vector<DbPath>)},
+@@ -554,6 +554,9 @@ TEST_F(OptionsSettableTest, ColumnFamilyOptionsAllFieldsSettable) {
+       {offsetof(struct ColumnFamilyOptions,
+                 blob_direct_write_partition_strategy),
+        sizeof(std::shared_ptr<BlobFilePartitionStrategy>)},
++      // Keep in offset order: FillWithSpecialChar walks this list sequentially
++      // and underflows its memset length if an entry is out of place.
 +      {offsetof(struct ColumnFamilyOptions, blob_dir), sizeof(std::string)},
-       {offsetof(struct ColumnFamilyOptions, compaction_thread_limiter),
-        sizeof(std::shared_ptr<ConcurrentTaskLimiter>)},
-       {offsetof(struct ColumnFamilyOptions, sst_partitioner_factory),
+       {offsetof(struct ColumnFamilyOptions, comparator), sizeof(Comparator*)},
+       {offsetof(struct ColumnFamilyOptions, merge_operator),
+        sizeof(std::shared_ptr<MergeOperator>)},
+@@ -683,6 +686,7 @@ TEST_F(OptionsSettableTest, ColumnFamilyOptionsAllFieldsSettable) {
+       "read_triggered_compaction_threshold=0.5;"
+       "sample_for_compression=0;"
+       "enable_blob_files=true;"
++      "blob_dir=path/to/blob_dir;"
+       "enable_blob_direct_write=true;"
+       "min_blob_size=256;"
+       "blob_file_size=1000000;"
