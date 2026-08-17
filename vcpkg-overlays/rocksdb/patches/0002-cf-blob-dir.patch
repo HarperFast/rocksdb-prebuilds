@@ -71,7 +71,7 @@ index d8d39a2..6e6d8b8 100644
    FileSystem* const fs = immutable_options.fs.get();
    assert(fs);
 diff --git a/db/column_family.cc b/db/column_family.cc
-index a0cb190..c9030c7 100644
+index a0cb190..5b8b555 100644
 --- a/db/column_family.cc
 +++ b/db/column_family.cc
 @@ -599,6 +599,15 @@ std::vector<std::string> ColumnFamilyData::GetDbPaths() const {
@@ -110,7 +110,7 @@ index a0cb190..c9030c7 100644
 +        return s;
 +      }
 +      assert(blob_directory != nullptr);
-+      blob_dir_.reset(blob_directory.release());
++      blob_dir_ = std::move(blob_directory);
 +      (*created_dirs)[blob_dir] = blob_dir_;
 +    } else {
 +      blob_dir_ = existing_dir->second;
@@ -303,10 +303,10 @@ index 4884b0c..318c902 100644
    return all_db_paths;
  }
 diff --git a/db/db_impl/db_impl_open.cc b/db/db_impl/db_impl_open.cc
-index cc385bf..4736d39 100644
+index cc385bf..c3b8051 100644
 --- a/db/db_impl/db_impl_open.cc
 +++ b/db/db_impl/db_impl_open.cc
-@@ -2682,6 +2682,13 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
+@@ -2682,6 +2682,15 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
        for (auto& cf_path : cf.options.cf_paths) {
          paths.emplace_back(cf_path.path);
        }
@@ -314,7 +314,9 @@ index cc385bf..4736d39 100644
 +      // entry, which is already covered above. Pushing it unconditionally
 +      // would also inflate `paths` and disable the single-path NoSpace()
 +      // recovery below.
-+      if (!cf.options.blob_dir.empty()) {
++      if (!cf.options.blob_dir.empty() &&
++          std::find(paths.begin(), paths.end(), cf.options.blob_dir) ==
++              paths.end()) {
 +        paths.emplace_back(cf.options.blob_dir);
 +      }
      }
@@ -500,6 +502,20 @@ index f74d136..ce900d3 100644
  };
  
  struct ImmutableOptions : public ImmutableDBOptions, public ImmutableCFOptions {
+diff --git a/options/options.cc b/options/options.cc
+index a833993..4190615 100644
+--- a/options/options.cc
++++ b/options/options.cc
+@@ -120,7 +120,8 @@ AdvancedColumnFamilyOptions::AdvancedColumnFamilyOptions(const Options& options)
+       min_tombstones_for_range_conversion(
+           options.min_tombstones_for_range_conversion),
+       memtable_batch_lookup_optimization(
+-          options.memtable_batch_lookup_optimization) {
++          options.memtable_batch_lookup_optimization),
++      blob_dir(options.blob_dir) {
+   assert(memtable_factory.get() != nullptr);
+   if (max_bytes_for_level_multiplier_additional.size() <
+       static_cast<unsigned int>(num_levels)) {
 diff --git a/options/options_helper.cc b/options/options_helper.cc
 index f861fba..1b9451a 100644
 --- a/options/options_helper.cc
@@ -534,3 +550,18 @@ index 4ccc790..febdf4d 100644
        "enable_blob_direct_write=true;"
        "min_blob_size=256;"
        "blob_file_size=1000000;"
+diff --git a/options/options_test.cc b/options/options_test.cc
+index a6a60e6..8ef4aa5 100644
+--- a/options/options_test.cc
++++ b/options/options_test.cc
+@@ -1556,1 +1556,10 @@
++TEST_F(OptionsTest, AdvancedColumnFamilyOptionsFromOptions) {
++  Options options;
++  options.blob_dir = "/var/lib/rocksdb/blobs";
++
++  AdvancedColumnFamilyOptions advanced_options(options);
++
++  ASSERT_EQ(advanced_options.blob_dir, options.blob_dir);
++}
++
+ TEST_F(OptionsTest, DBOptionsComposeImmutable) {
