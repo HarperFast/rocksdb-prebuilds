@@ -378,7 +378,7 @@ index aab2bb6..1b37e6f 100644
          meta->GetGarbageBlobCount(), meta->GetGarbageBlobBytes(),
          meta->GetChecksumMethod(), meta->GetChecksumValue());
 diff --git a/include/rocksdb/advanced_options.h b/include/rocksdb/advanced_options.h
-index 17302d7..1641a5d 100644
+index 17302d7..d524801 100644
 --- a/include/rocksdb/advanced_options.h
 +++ b/include/rocksdb/advanced_options.h
 @@ -9,6 +9,7 @@
@@ -401,15 +401,7 @@ index 17302d7..1641a5d 100644
  namespace ROCKSDB_NAMESPACE {
  
  class Slice;
-@@ -1102,6 +1108,7 @@ struct AdvancedColumnFamilyOptions {
-   // Dynamically changeable through the SetOptions() API
-   uint64_t blob_file_size = 1ULL << 28;
- 
-+
-   // The compression algorithm to use for large values stored in blob files.
-   // Note that enable_blob_files has to be set in order for this option to have
-   // any effect.
-@@ -1486,6 +1493,41 @@ struct AdvancedColumnFamilyOptions {
+@@ -1486,6 +1492,41 @@ struct AdvancedColumnFamilyOptions {
    explicit AdvancedColumnFamilyOptions(const Options& options);
  
    // ---------------- OPTIONS NOT SUPPORTED ANYMORE ----------------
