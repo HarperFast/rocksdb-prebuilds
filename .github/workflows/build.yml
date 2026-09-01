@@ -1,6 +1,7 @@
 name: Automated RocksDB Builds
 
 on:
+  pull_request:
   schedule:
     - cron: "30 2 * * *"
   workflow_dispatch:
@@ -19,8 +20,69 @@ on:
         type: string
 
 jobs:
+  validate:
+    name: Validate RocksDB patches
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download latest RocksDB release
+        id: rocksdb
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=$(curl -sfL \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/repos/facebook/rocksdb/releases/latest \
+            | jq -er '.tag_name')
+          curl -sfL \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -o rocksdb.tar.gz \
+            "https://github.com/facebook/rocksdb/archive/refs/tags/${TAG}.tar.gz"
+          tar -xzf rocksdb.tar.gz
+          SOURCE_DIR=$(find . -maxdepth 1 -type d -name 'rocksdb-*' -print -quit)
+          test -n "$SOURCE_DIR"
+          echo "source_dir=$SOURCE_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Apply patches without fuzz
+        shell: bash
+        run: |
+          set -euo pipefail
+          for patch_file in vcpkg-overlays/rocksdb/patches/*.patch; do
+            patch -p1 -F0 -d "${{ steps.rocksdb.outputs.source_dir }}" \
+              < "$patch_file"
+          done
+
+      - name: Audit blob path call sites
+        shell: bash
+        run: |
+          vcpkg-overlays/rocksdb/verify-blob-path-inventory.sh \
+            "${{ steps.rocksdb.outputs.source_dir }}"
+
+      - name: Build focused upstream tests
+        working-directory: ${{ steps.rocksdb.outputs.source_dir }}
+        shell: bash
+        run: |
+          make -j2 db_basic_test db_flush_test checkpoint_test \
+            backup_engine_test options_test
+
+      - name: Run focused upstream tests
+        working-directory: ${{ steps.rocksdb.outputs.source_dir }}
+        shell: bash
+        run: |
+          ./db_basic_test --gtest_filter='*PortableLiveFileCapture*'
+          ./db_flush_test \
+            --gtest_filter='*BlobDirIsFsyncedForOrdinaryAndAtomicFlush*'
+          ./checkpoint_test
+          ./backup_engine_test
+          ./options_test
+
   check:
     name: Check for new release
+    if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     outputs:
       should_build: ${{ steps.check-build.outputs.should_build }}
@@ -337,6 +399,11 @@ jobs:
               patch -p1 -F0 -d "$ROCKSDB_SRC" < "$patch"
             fi
           done
+
+          # Audits the official patch set only: the inventories describe that set,
+          # and an opt-in experiment is not drift.
+          "${GITHUB_WORKSPACE}/vcpkg-overlays/rocksdb/verify-blob-path-inventory.sh" \
+            "$ROCKSDB_SRC"
 
           # Experimental patches, resolved and ordered by the check job. Applied
           # after the official patches; empty unless the build requested them.

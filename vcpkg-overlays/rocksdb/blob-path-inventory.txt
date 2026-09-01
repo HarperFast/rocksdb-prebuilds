@@ -1,0 +1,21 @@
+db/blob/blob_file_builder.cc:192:      BlobFileName(immutable_options_->GetBlobDir(), blob_file_number);
+db/blob/blob_file_partition_manager.cc:192:  const std::string blob_file_path = BlobFileName(db_path_, blob_file_number);
+db/blob/blob_file_partition_manager.cc:313:    const std::string blob_file_path = BlobFileName(db_path_, file_number);
+db/blob/blob_file_reader.cc:102:      BlobFileName(immutable_options.GetBlobDir(), blob_file_number);
+db/db_filesnapshot.cc:341:      info.relative_filename = BlobFileName(meta->GetBlobFileNumber());
+db/db_filesnapshot.cc:81:    ret.emplace_back(BlobFileName("", blob_file_number));
+db/db_impl/db_impl.cc:7131:            BlobFileName(cfd->ioptions().GetBlobDir(), blob_file_number);
+db/db_impl/db_impl_compaction_flush.cc:1996:      output_file_names->push_back(BlobFileName(
+db/db_impl/db_impl_compaction_flush.cc:5243:        BlobFileName(c->immutable_options().GetBlobDir(),
+db/db_impl/db_impl_compaction_flush.cc:5254:        BlobFileName(c->immutable_options().GetBlobDir(),
+db/db_impl/db_impl_files.cc:566:    candidate_files.emplace_back(BlobFileName(blob_file.GetBlobFileNumber()),
+db/db_impl/db_impl_files.cc:698:              BlobFileName(candidate_file.file_path, number);
+db/db_impl/db_impl_files.cc:754:      fname = BlobFileName(candidate_file.file_path, number);
+db/flush_job.cc:1242:        BlobFileName(cfd_->ioptions().GetBlobDir(),
+db/version_set.cc:2231:        meta->GetBlobFileNumber(), BlobFileName("", meta->GetBlobFileNumber()),
+file/filename.cc:88:std::string BlobFileName(uint64_t number) {
+file/filename.cc:93:std::string BlobFileName(const std::string& blobdirname, uint64_t number) {
+file/filename.cc:98:std::string BlobFileName(const std::string& dbname, const std::string& blob_dir,
+file/filename.h:47:std::string BlobFileName(uint64_t number);
+file/filename.h:49:std::string BlobFileName(const std::string& bdirname, uint64_t number);
+file/filename.h:51:std::string BlobFileName(const std::string& dbname, const std::string& blob_dir,
