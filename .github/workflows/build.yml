@@ -29,6 +29,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install audit dependency
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
       - name: Download latest RocksDB release
         id: rocksdb
         shell: bash
@@ -313,9 +316,34 @@ jobs:
           echo "should_build=$SHOULD_BUILD" >> $GITHUB_OUTPUT
           echo "release_version=$RELEASE_VERSION" >> $GITHUB_OUTPUT
 
+  audit:
+    name: Audit RocksDB patches
+    needs: [check]
+    if: ${{ needs.check.outputs.should_build == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install audit dependency
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
+      - name: Apply and audit patches
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_DIR="rocksdb-${{ needs.check.outputs.version }}"
+          curl -sfL -o rocksdb.tar.gz \
+            "https://github.com/facebook/rocksdb/archive/refs/tags/v${{ needs.check.outputs.version }}.tar.gz"
+          tar -xzf rocksdb.tar.gz
+          for patch_file in vcpkg-overlays/rocksdb/patches/*.patch; do
+            patch -p1 -F0 -d "$SOURCE_DIR" < "$patch_file"
+          done
+          vcpkg-overlays/rocksdb/verify-blob-path-inventory.sh "$SOURCE_DIR"
+
   build:
     name: Build
-    needs: [check]
+    needs: [check, audit]
     if: ${{ needs.check.outputs.should_build == 'true' }}
     strategy:
       fail-fast: false
@@ -399,11 +427,6 @@ jobs:
               patch -p1 -F0 -d "$ROCKSDB_SRC" < "$patch"
             fi
           done
-
-          # Audits the official patch set only: the inventories describe that set,
-          # and an opt-in experiment is not drift.
-          "${GITHUB_WORKSPACE}/vcpkg-overlays/rocksdb/verify-blob-path-inventory.sh" \
-            "$ROCKSDB_SRC"
 
           # Experimental patches, resolved and ordered by the check job. Applied
           # after the official patches; empty unless the build requested them.

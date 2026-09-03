@@ -2,9 +2,9 @@ db/blob/blob_file_builder.cc:192:      BlobFileName(immutable_options_->GetBlobD
 db/blob/blob_file_partition_manager.cc:192:  const std::string blob_file_path = BlobFileName(db_path_, blob_file_number);
 db/blob/blob_file_partition_manager.cc:313:    const std::string blob_file_path = BlobFileName(db_path_, file_number);
 db/blob/blob_file_reader.cc:102:      BlobFileName(immutable_options.GetBlobDir(), blob_file_number);
-db/db_filesnapshot.cc:341:      info.relative_filename = BlobFileName(meta->GetBlobFileNumber());
-db/db_filesnapshot.cc:81:    ret.emplace_back(BlobFileName("", blob_file_number));
-db/db_impl/db_impl.cc:7131:            BlobFileName(cfd->ioptions().GetBlobDir(), blob_file_number);
+db/db_filesnapshot.cc:358:      info.relative_filename = BlobFileName(meta->GetBlobFileNumber());
+db/db_filesnapshot.cc:90:    ret.emplace_back(BlobFileName("", blob_file_number));
+db/db_impl/db_impl.cc:7144:            BlobFileName(cfd->ioptions().GetBlobDir(), blob_file_number);
 db/db_impl/db_impl_compaction_flush.cc:1996:      output_file_names->push_back(BlobFileName(
 db/db_impl/db_impl_compaction_flush.cc:5243:        BlobFileName(c->immutable_options().GetBlobDir(),
 db/db_impl/db_impl_compaction_flush.cc:5254:        BlobFileName(c->immutable_options().GetBlobDir(),

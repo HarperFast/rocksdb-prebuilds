@@ -2,8 +2,14 @@
 
 set -euo pipefail
 
+update_inventory=false
+if [[ ${1:-} == "--update" ]]; then
+  update_inventory=true
+  shift
+fi
+
 if [[ $# -ne 1 ]]; then
-  echo "usage: $0 ROCKSDB_SOURCE_DIR" >&2
+  echo "usage: $0 [--update] ROCKSDB_SOURCE_DIR" >&2
   exit 2
 fi
 
@@ -30,8 +36,6 @@ rg -n --no-heading 'BlobFileName\(' . \
   | sed 's#^\./##' \
   | sort > "$actual_inventory"
 
-diff -u "$script_dir/blob-path-inventory.txt" "$actual_inventory"
-
 rg -n --no-heading 'cf_paths\.front\(\)\.path' . \
   -g '*.{cc,h}' \
   -g '!**/*test*' \
@@ -48,6 +52,13 @@ rg -n --no-heading 'cf_paths\.front\(\)\.path' . \
   | sed 's#^\./##' \
   | sort > "$actual_cf_path_inventory"
 
+if [[ $update_inventory == true ]]; then
+  cp "$actual_inventory" "$script_dir/blob-path-inventory.txt"
+  cp "$actual_cf_path_inventory" "$script_dir/cf-blob-path-inventory.txt"
+  echo "Updated blob path inventories from $source_dir"
+fi
+
+diff -u "$script_dir/blob-path-inventory.txt" "$actual_inventory"
 diff -u "$script_dir/cf-blob-path-inventory.txt" \
   "$actual_cf_path_inventory"
 grep -Eq '^#define ROCKSDB_HAS_CF_BLOB_DIR 2$' \
