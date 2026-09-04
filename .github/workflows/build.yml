@@ -44,9 +44,11 @@ jobs:
           set -euo pipefail
           ROOT="experimental-patches"
 
-          # Normalize newlines (a multiline dispatch value) to commas: `read -ra` below
-          # stops at the first newline and would silently drop later ids.
-          RAW="${RAW//$'\r'/}"
+          # Treat CR/newlines (a multiline dispatch value) as delimiters, replacing them
+          # with commas: `read -ra` below stops at the first newline and would silently
+          # drop later ids. Replacing rather than deleting CR avoids coalescing a lone
+          # interior CR (`1<CR>2` -> `1,2`, two ids, not `12`).
+          RAW="${RAW//$'\r'/,}"
           RAW="${RAW//$'\n'/,}"
 
           # Input of only spaces/commas (e.g. ", ,") means no experimental patches:
