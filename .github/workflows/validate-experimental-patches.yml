@@ -1,0 +1,73 @@
+name: Validate experimental patches
+
+# Enforces the experimental-patches invariants so a build can resolve an id to
+# exactly one directory: every entry is `<id>-<slug>` with at least one .patch,
+# and no two ids collide (numeric ids compared by value, so 1 == 01 == 0001).
+on:
+  pull_request:
+    paths:
+      - "experimental-patches/**"
+      - ".github/workflows/validate-experimental-patches.yml"
+  push:
+    branches: [main]
+    paths:
+      - "experimental-patches/**"
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate directory names and unique ids
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="experimental-patches"
+          errors=0
+          declare -A id_owner   # canonical id -> directory that claimed it
+
+          for dir in "$ROOT"/*/; do
+            [ -d "$dir" ] || continue
+            name="$(basename "$dir")"
+
+            if [[ "$name" != *-* ]]; then
+              echo "::error::'$name' must be named <id>-<slug> (no '-' found)"
+              errors=1
+              continue
+            fi
+
+            id="${name%%-*}"
+            slug="${name#*-}"
+            if [[ -z "$slug" ]]; then
+              echo "::error::'$name' has an empty slug"
+              errors=1
+            fi
+
+            if ! compgen -G "$dir*.patch" > /dev/null; then
+              echo "::error::'$name' contains no .patch file"
+              errors=1
+            fi
+
+            # Canonical id: numeric ids collapse by value; others compare as strings.
+            if [[ "$id" =~ ^[0-9]+$ ]]; then
+              canonical="n:$((10#$id))"
+            else
+              canonical="s:$id"
+            fi
+
+            if [[ -n "${id_owner[$canonical]:-}" ]]; then
+              echo "::error::id conflict: '$name' and '${id_owner[$canonical]}' resolve to the same id ($id)"
+              errors=1
+            else
+              id_owner[$canonical]="$name"
+            fi
+          done
+
+          if [[ "$errors" -ne 0 ]]; then
+            echo "Experimental-patches validation failed."
+            exit 1
+          fi
+          echo "All experimental patches valid."

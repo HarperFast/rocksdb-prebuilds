@@ -13,6 +13,10 @@ on:
         description: Numeric prerelease revision for publishing a prerelease build of a RocksDB version (e.g. `1` for v11.1.2-1 or `rc2` for v11.1.2-rc2)
         required: false
         type: string
+      experimental_patches:
+        description: Comma-separated experimental patch ids to apply on top of the official patches (e.g. `1, 3, 4`). See experimental-patches/README.md. Produces a prerelease build.
+        required: false
+        type: string
 
 jobs:
   check:
@@ -23,7 +27,82 @@ jobs:
       version: ${{ steps.latest-rocksdb.outputs.version }}
       release_version: ${{ steps.check-build.outputs.release_version }}
       mismatch_note: ${{ steps.latest-rocksdb.outputs.mismatch_note }}
+      experimental_dirs: ${{ steps.experimental.outputs.dirs }}
+      experimental_note: ${{ steps.experimental.outputs.note }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve experimental patches
+        id: experimental
+        shell: bash
+        run: |
+          set -euo pipefail
+          RAW="${{ inputs.experimental_patches }}"
+          ROOT="experimental-patches"
+
+          if [[ -z "${RAW// /}" ]]; then
+            echo "dirs=" >> "$GITHUB_OUTPUT"
+            echo "segment=" >> "$GITHUB_OUTPUT"
+            { echo "note<<EOF"; echo; echo "EOF"; } >> "$GITHUB_OUTPUT"
+            echo "No experimental patches requested."
+            exit 0
+          fi
+
+          # Map each experimental-patches/<id>-<slug> dir to its canonical id.
+          # Numeric ids collapse by value (1 == 01 == 0001); others are exact strings.
+          declare -A dir_by_id
+          for dir in "$ROOT"/*/; do
+            [ -d "$dir" ] || continue
+            name="$(basename "$dir")"
+            [[ "$name" == *-* ]] || continue
+            did="${name%%-*}"
+            if [[ "$did" =~ ^[0-9]+$ ]]; then key="n:$((10#$did))"; else key="s:$did"; fi
+            dir_by_id[$key]="$name"
+          done
+
+          # Resolve requested ids, dedupe, and sort numeric-aware.
+          declare -A seen
+          keys=()
+          IFS=',' read -ra REQ <<< "$RAW"
+          for raw_id in "${REQ[@]}"; do
+            id="$(echo "$raw_id" | xargs)"   # trim whitespace
+            [[ -z "$id" ]] && continue
+            if [[ "$id" =~ ^[0-9]+$ ]]; then key="n:$((10#$id))"; else key="s:$id"; fi
+            if [[ -z "${dir_by_id[$key]:-}" ]]; then
+              echo "No experimental patch for id '$id'. Available ids:" >&2
+              for k in "${!dir_by_id[@]}"; do echo "  - ${dir_by_id[$k]}" >&2; done
+              exit 1
+            fi
+            [[ -n "${seen[$key]:-}" ]] && continue
+            seen[$key]=1
+            keys+=("$key")
+          done
+
+          # Numeric ids sort ascending by value and before any string ids.
+          sorted=$(for k in "${keys[@]}"; do
+            if [[ "$k" == n:* ]]; then printf '0\t%020d\t%s\n' "${k#n:}" "$k"; else printf '1\t%s\t%s\n' "${k#s:}" "$k"; fi
+          done | sort | cut -f3)
+
+          dirs=""; segment=""; note=""
+          for k in $sorted; do
+            name="${dir_by_id[$k]}"
+            id="${k#n:}"; id="${id#s:}"
+            dirs="${dirs:+$dirs }$name"
+            segment="${segment:+$segment-}$id"
+            note="${note}"$'\n'"- \`$id\` — [$name](https://github.com/${{ github.repository }}/tree/${{ github.sha }}/experimental-patches/$name)"
+          done
+
+          echo "Applying experimental patches (in order): $dirs"
+          echo "dirs=$dirs" >> "$GITHUB_OUTPUT"
+          echo "segment=$segment" >> "$GITHUB_OUTPUT"
+          {
+            echo "note<<EOF"
+            echo "**⚠️ Experimental build** — includes downstream experimental patches:"
+            echo "$note"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Get latest RocksDB release
         id: latest-rocksdb
         shell: bash
@@ -95,22 +174,36 @@ jobs:
           ROCKSDB_VERSION="${{ steps.latest-rocksdb.outputs.version_h }}"
           TAG_VERSION="${{ steps.latest-rocksdb.outputs.version }}"
           REVISION="${{ inputs.prerelease_revision }}"
+          SEGMENT="${{ steps.experimental.outputs.segment }}"
           SHOULD_BUILD=false
 
-          if [[ -n "$REVISION" ]]; then
-            if [[ ! "$REVISION" =~ ^[0-9]+$ ]]; then
-              echo "prerelease_revision must be numeric" >&2
-              exit 1
-            fi
-            RELEASE_VERSION="${ROCKSDB_VERSION}-${REVISION}"
+          if [[ -n "$REVISION" && ! "$REVISION" =~ ^[0-9]+$ ]]; then
+            echo "prerelease_revision must be numeric" >&2
+            exit 1
+          fi
+
+          # Compose the release version: <version>[-experimental-<ids>][<rev>].
+          # Ids join with hyphens; the revision is appended with a dot so an id list
+          # and a revision can never be confused (e.g. exp {1} rev 2 -> `-1.2`, which
+          # is distinct from exp {1,2} -> `-1-2`). Both remain valid semver.
+          RELEASE_VERSION="$ROCKSDB_VERSION"
+          if [[ -n "$SEGMENT" ]]; then
+            RELEASE_VERSION="${RELEASE_VERSION}-experimental-${SEGMENT}"
+            [[ -n "$REVISION" ]] && RELEASE_VERSION="${RELEASE_VERSION}.${REVISION}"
+          elif [[ -n "$REVISION" ]]; then
+            RELEASE_VERSION="${RELEASE_VERSION}-${REVISION}"
+          fi
+
+          if [[ -n "$SEGMENT" ]]; then
+            SHOULD_BUILD=true
+            echo "Building experimental RocksDB v$ROCKSDB_VERSION (tag v$TAG_VERSION) as v$RELEASE_VERSION"
+          elif [[ -n "$REVISION" ]]; then
             SHOULD_BUILD=true
             echo "Building RocksDB v$ROCKSDB_VERSION (tag v$TAG_VERSION) prerelease as v$RELEASE_VERSION"
           elif [[ "$ROCKSDB_VERSION" != "${{ steps.latest-prebuild.outputs.version }}" ]]; then
-            RELEASE_VERSION="$ROCKSDB_VERSION"
             SHOULD_BUILD=true
             echo "New RocksDB release!"
           else
-            RELEASE_VERSION="$ROCKSDB_VERSION"
             echo "No new RocksDB release"
           fi
 
@@ -202,11 +295,26 @@ jobs:
 
           mkdir dist
 
+          ROCKSDB_SRC="${GITHUB_WORKSPACE}/rocksdb-${{ needs.check.outputs.version }}"
+
+          # -F0 (zero fuzz): a patch whose context has drifted in a new RocksDB
+          # version fails loudly instead of fuzzy-matching a hunk into the wrong site.
           for patch in "${GITHUB_WORKSPACE}/vcpkg-overlays/rocksdb/patches"/*.patch; do
             if [ -f "$patch" ]; then
               echo "Applying patch: $patch"
-              patch -p1 -d "${GITHUB_WORKSPACE}/rocksdb-${{ needs.check.outputs.version }}" < "$patch"
+              patch -p1 -F0 -d "$ROCKSDB_SRC" < "$patch"
             fi
+          done
+
+          # Experimental patches, resolved and ordered by the check job. Applied
+          # after the official patches; empty unless the build requested them.
+          for dir in ${{ needs.check.outputs.experimental_dirs }}; do
+            for patch in "${GITHUB_WORKSPACE}/experimental-patches/$dir"/*.patch; do
+              if [ -f "$patch" ]; then
+                echo "Applying experimental patch: $patch"
+                patch -p1 -F0 -d "$ROCKSDB_SRC" < "$patch"
+              fi
+            done
           done
 
       - name: Build RocksDB (macos/linux glibc/windows)
@@ -377,10 +485,12 @@ jobs:
 
             ${{ needs.check.outputs.mismatch_note }}
 
+            ${{ needs.check.outputs.experimental_note }}
+
             Built from upstream tag v${{ needs.check.outputs.version }} — release notes: https://github.com/facebook/rocksdb/releases/tag/v${{ needs.check.outputs.version }}
           name: RocksDB v${{ needs.check.outputs.release_version }}
           tag_name: v${{ needs.check.outputs.release_version }}
-          prerelease: ${{ inputs.prerelease_revision != '' }}
+          prerelease: ${{ inputs.prerelease_revision != '' || inputs.experimental_patches != '' }}
           token: ${{ secrets.GH_TOKEN }}
 
   on-release-success:
@@ -427,7 +537,7 @@ jobs:
             }
 
       - name: Repository Dispatch
-        if: ${{ inputs.prerelease_revision == '' }}
+        if: ${{ inputs.prerelease_revision == '' && inputs.experimental_patches == '' }}
         uses: peter-evans/repository-dispatch@v3
         with:
           event-type: new-rocksdb-prebuild
