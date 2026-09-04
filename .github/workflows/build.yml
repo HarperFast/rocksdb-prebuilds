@@ -36,12 +36,18 @@ jobs:
       - name: Resolve experimental patches
         id: experimental
         shell: bash
+        env:
+          # Via env, not inline ${{ }}, so the value is data the script reads rather
+          # than text spliced into the script source before bash parses it.
+          RAW: ${{ inputs.experimental_patches }}
         run: |
           set -euo pipefail
-          RAW="${{ inputs.experimental_patches }}"
           ROOT="experimental-patches"
 
-          if [[ -z "${RAW// /}" ]]; then
+          # Input of only spaces/commas (e.g. ", ,") means no experimental patches:
+          # strip both so it takes the empty path rather than emitting an empty-list
+          # "experimental" build that still trips the prerelease/dispatch gates.
+          if [[ -z "${RAW//[ ,]/}" ]]; then
             echo "dirs=" >> "$GITHUB_OUTPUT"
             echo "segment=" >> "$GITHUB_OUTPUT"
             { echo "note<<EOF"; echo; echo "EOF"; } >> "$GITHUB_OUTPUT"
@@ -66,7 +72,7 @@ jobs:
           keys=()
           IFS=',' read -ra REQ <<< "$RAW"
           for raw_id in "${REQ[@]}"; do
-            id="$(echo "$raw_id" | xargs)"   # trim whitespace
+            id="${raw_id//[[:space:]]/}"   # trim whitespace (param expansion; xargs mangles quotes/dashes)
             [[ -z "$id" ]] && continue
             if [[ "$id" =~ ^[0-9]+$ ]]; then key="n:$((10#$id))"; else key="s:$id"; fi
             if [[ -z "${dir_by_id[$key]:-}" ]]; then
@@ -276,6 +282,10 @@ jobs:
 
       - name: Download and patch RocksDB
         shell: bash
+        env:
+          # Resolved, validated dir names (ordered by the check job) as data, not
+          # spliced into the script source. Charset-validated, so word-splitting is safe.
+          EXPERIMENTAL_DIRS: ${{ needs.check.outputs.experimental_dirs }}
         run: |
           set -e
           set -o pipefail
@@ -308,7 +318,7 @@ jobs:
 
           # Experimental patches, resolved and ordered by the check job. Applied
           # after the official patches; empty unless the build requested them.
-          for dir in ${{ needs.check.outputs.experimental_dirs }}; do
+          for dir in $EXPERIMENTAL_DIRS; do
             for patch in "${GITHUB_WORKSPACE}/experimental-patches/$dir"/*.patch; do
               if [ -f "$patch" ]; then
                 echo "Applying experimental patch: $patch"
@@ -490,7 +500,7 @@ jobs:
             Built from upstream tag v${{ needs.check.outputs.version }} — release notes: https://github.com/facebook/rocksdb/releases/tag/v${{ needs.check.outputs.version }}
           name: RocksDB v${{ needs.check.outputs.release_version }}
           tag_name: v${{ needs.check.outputs.release_version }}
-          prerelease: ${{ inputs.prerelease_revision != '' || inputs.experimental_patches != '' }}
+          prerelease: ${{ inputs.prerelease_revision != '' || needs.check.outputs.experimental_dirs != '' }}
           token: ${{ secrets.GH_TOKEN }}
 
   on-release-success:
@@ -537,7 +547,7 @@ jobs:
             }
 
       - name: Repository Dispatch
-        if: ${{ inputs.prerelease_revision == '' && inputs.experimental_patches == '' }}
+        if: ${{ inputs.prerelease_revision == '' && needs.check.outputs.experimental_dirs == '' }}
         uses: peter-evans/repository-dispatch@v3
         with:
           event-type: new-rocksdb-prebuild

@@ -41,8 +41,17 @@ jobs:
 
             id="${name%%-*}"
             slug="${name#*-}"
-            if [[ -z "$slug" ]]; then
-              echo "::error::'$name' has an empty slug"
+            # Charset allowlist. The id is alphanumeric only: it becomes a semver
+            # prerelease segment, so a dot (`1.2`) or `+` would re-segment the tag and
+            # collide with the `<ids>.<revision>` form, and any shell metacharacter
+            # would be unsafe when the resolved dir name is used unquoted in a build.
+            # The slug is cosmetic (never reaches the tag) but must stay shell-safe.
+            if [[ ! "$id" =~ ^[A-Za-z0-9]+$ ]]; then
+              echo "::error::'$name' has a non-alphanumeric id ('$id'); ids must match ^[A-Za-z0-9]+$"
+              errors=1
+            fi
+            if [[ ! "$slug" =~ ^[A-Za-z0-9._-]+$ ]]; then
+              echo "::error::'$name' has an invalid slug ('$slug'); slugs must match ^[A-Za-z0-9._-]+$"
               errors=1
             fi
 
