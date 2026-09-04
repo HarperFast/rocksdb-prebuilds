@@ -39,6 +39,4 @@ collides with a clean release and is obviously experimental.
 ## Patch authoring
 
 Patches apply with `patch -p1 -F0` (zero fuzz) against a fresh upstream tarball.
-Author against a specific RocksDB version and record it in the patch's README — a
-version bump that shifts a hunk's context then fails the build loudly instead of
-silently landing in the wrong place.
+Author against a specific RocksDB version and record it in the patch's README — this way, a version bump that shifts a hunk's context fails the build loudly instead of silently landing in the wrong place.
