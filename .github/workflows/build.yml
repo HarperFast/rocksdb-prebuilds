@@ -24,7 +24,7 @@ jobs:
     name: Validate RocksDB patches
     if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -69,14 +69,15 @@ jobs:
         working-directory: ${{ steps.rocksdb.outputs.source_dir }}
         shell: bash
         run: |
-          make -j2 db_basic_test db_flush_test checkpoint_test \
+          make -j"$(nproc)" db_basic_test db_flush_test checkpoint_test \
             backup_engine_test options_test
 
       - name: Run focused upstream tests
         working-directory: ${{ steps.rocksdb.outputs.source_dir }}
         shell: bash
         run: |
-          ./db_basic_test --gtest_filter='*PortableLiveFileCapture*'
+          ./db_basic_test \
+            --gtest_filter='*PortableLiveFileCapture*:*RecoveryBlobDirSyncedBeforeFreshManifestPublish*'
           ./db_flush_test \
             --gtest_filter='*BlobDirIsFsyncedForOrdinaryAndAtomicFlush*'
           ./checkpoint_test

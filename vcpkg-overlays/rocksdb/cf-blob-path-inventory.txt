@@ -1,3 +1,3 @@
-include/rocksdb/advanced_options.h:1500:  // from. When empty (the default), blob files live in `cf_paths.front().path`
-include/rocksdb/advanced_options.h:1534:  // Default: empty (use cf_paths.front().path)
+include/rocksdb/advanced_options.h:1501:  // from. When empty (the default), blob files live in `cf_paths.front().path`
+include/rocksdb/advanced_options.h:1535:  // Default: empty (use cf_paths.front().path)
 options/cf_options.h:111:    return blob_dir.empty() ? cf_paths.front().path : blob_dir;

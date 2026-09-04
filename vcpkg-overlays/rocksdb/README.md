@@ -14,7 +14,9 @@ legitimate change, regenerate both inventories with
 
 - `0002-cf-blob-dir.patch` — adds `AdvancedColumnFamilyOptions::blob_dir` so blob files can live on
   a different volume than the SST files, and defines `ROCKSDB_HAS_CF_BLOB_DIR` for feature
-  detection. Consumed by `@harperfast/rocksdb-js` via its `blobs.dir` open option.
+  detection. Consumed by `@harperfast/rocksdb-js` via its `blobs.dir` open option. The added C++
+  field changes the layout of RocksDB option types, so consumers must rebuild against the patched
+  headers; binaries compiled against stock RocksDB headers are not ABI-compatible with this build.
 
 MIT License
 
