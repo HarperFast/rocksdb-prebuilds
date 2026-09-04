@@ -44,6 +44,11 @@ jobs:
           set -euo pipefail
           ROOT="experimental-patches"
 
+          # Normalize newlines (a multiline dispatch value) to commas: `read -ra` below
+          # stops at the first newline and would silently drop later ids.
+          RAW="${RAW//$'\r'/}"
+          RAW="${RAW//$'\n'/,}"
+
           # Input of only spaces/commas (e.g. ", ,") means no experimental patches:
           # strip both so it takes the empty path rather than emitting an empty-list
           # "experimental" build that still trips the prerelease/dispatch gates.
@@ -64,15 +69,20 @@ jobs:
             [[ "$name" == *-* ]] || continue
             did="${name%%-*}"
             if [[ "$did" =~ ^[0-9]+$ ]]; then key="n:$((10#$did))"; else key="s:$did"; fi
+            # Enforce id-uniqueness here too: the validator gates merged code, but this
+            # resolver also runs on any dispatched branch, which may not have passed it.
+            if [[ -n "${dir_by_id[$key]:-}" ]]; then
+              echo "Conflicting experimental patch ids: '$name' and '${dir_by_id[$key]}' share id '$did'" >&2
+              exit 1
+            fi
             dir_by_id[$key]="$name"
           done
 
-          # Resolve requested ids, dedupe, and sort numeric-aware.
           declare -A seen
           keys=()
           IFS=',' read -ra REQ <<< "$RAW"
           for raw_id in "${REQ[@]}"; do
-            id="${raw_id//[[:space:]]/}"   # trim whitespace (param expansion; xargs mangles quotes/dashes)
+            read -r id <<< "$raw_id"   # trim surrounding whitespace only; interior space makes an invalid id fail loudly
             [[ -z "$id" ]] && continue
             if [[ "$id" =~ ^[0-9]+$ ]]; then key="n:$((10#$id))"; else key="s:$id"; fi
             if [[ -z "${dir_by_id[$key]:-}" ]]; then
