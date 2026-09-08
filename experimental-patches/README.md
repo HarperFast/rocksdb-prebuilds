@@ -40,7 +40,9 @@ job backstops it.
 
 Dispatch the build workflow with a comma-separated list of ids, e.g. `1, 3, 4`.
 Ids are resolved to directories, sorted by id, and applied in that order after the
-official patches. The resulting build is published as a prerelease tagged
+official patches. Within a single directory, multiple `.patch` files apply in
+`LC_ALL=C` lexicographic order — zero-pad their names (`01-`, `02-`) if one must
+apply before another, since `10-x.patch` otherwise sorts before `2-y.patch`. The resulting build is published as a prerelease tagged
 `v<version>-experimental-<ids>` (e.g. `v11.8.1-experimental-1-3-4`), so it never
 collides with a clean release and is obviously experimental.
 

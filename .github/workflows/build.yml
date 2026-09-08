@@ -52,10 +52,11 @@ jobs:
           RAW="${RAW//$'\r'/,}"
           RAW="${RAW//$'\n'/,}"
 
-          # Input of only spaces/commas (e.g. ", ,") means no experimental patches:
-          # strip both so it takes the empty path rather than emitting an empty-list
-          # "experimental" build that still trips the prerelease/dispatch gates.
-          if [[ -z "${RAW//[ ,]/}" ]]; then
+          # Input of only whitespace/commas (e.g. ", ," or a stray tab) means no
+          # experimental patches: strip both so it takes the empty path rather than
+          # emitting an empty-list "experimental" build whose release body claims
+          # downstream patches it never applied.
+          if [[ -z "${RAW//[[:space:],]/}" ]]; then
             echo "dirs=" >> "$GITHUB_OUTPUT"
             echo "segment=" >> "$GITHUB_OUTPUT"
             { echo "note<<EOF"; echo; echo "EOF"; } >> "$GITHUB_OUTPUT"
@@ -65,19 +66,25 @@ jobs:
 
           # Map each experimental-patches/<id>-<slug> dir to its canonical id.
           # Numeric ids collapse by value (1 == 01 == 0001); others are exact strings.
-          declare -A dir_by_id
+          # Every invariant is re-checked here, not just uniqueness: the validator gates
+          # merged code, but this resolver also runs on branches that never passed it.
+          declare -A dir_by_id dir_by_ckey
           for dir in "$ROOT"/*/; do
             [ -d "$dir" ] || continue
             name="$(basename "$dir")"
-            [[ "$name" == *-* ]] || continue
-            did="${name%%-*}"
-            key="$(canon_id "$did")"
-            # Enforce id-uniqueness here too: the validator gates merged code, but this
-            # resolver also runs on any dispatched branch, which may not have passed it.
-            if [[ -n "${dir_by_id[$key]:-}" ]]; then
-              echo "Conflicting experimental patch ids: '$name' and '${dir_by_id[$key]}' share id '$did'" >&2
+            if ! problems="$(validate_patch_dir "$dir")"; then
+              echo "Invalid experimental patch directory:" >&2
+              printf '  %s\n' "$problems" >&2
               exit 1
             fi
+            did="${name%%-*}"
+            key="$(canon_id "$did")"
+            ckey="$(canon_collision_key "$did")"
+            if [[ -n "${dir_by_ckey[$ckey]:-}" ]]; then
+              echo "Conflicting experimental patch ids: '$name' and '${dir_by_ckey[$ckey]}' share id '$did'" >&2
+              exit 1
+            fi
+            dir_by_ckey[$ckey]="$name"
             dir_by_id[$key]="$name"
           done
 
@@ -98,9 +105,8 @@ jobs:
             keys+=("$key")
           done
 
-          # Numeric ids sort ascending by value and before any string ids. Sorting by
-          # digit-count first orders arbitrary-length ids without arithmetic; printf
-          # '%020d' saturated at INT64_MAX and mis-ordered anything larger.
+          # Numeric ids sort ascending by value and before any string ids; sorting by
+          # digit-count first keeps arbitrary-length ids exact without arithmetic.
           sorted=$(for k in "${keys[@]}"; do
             if [[ "$k" == n:* ]]; then num="${k#n:}"; printf '0\t%04d\t%s\t%s\n' "${#num}" "$num" "$k"
             else printf '1\t0000\t%s\t%s\n' "${k#s:}" "$k"; fi
@@ -335,12 +341,13 @@ jobs:
           # Experimental patches, resolved and ordered by the check job. Applied
           # after the official patches; empty unless the build requested them.
           for dir in $EXPERIMENTAL_DIRS; do
-            for patch in "${GITHUB_WORKSPACE}/experimental-patches/$dir"/*.patch; do
-              if [ -f "$patch" ]; then
-                echo "Applying experimental patch: $patch"
-                patch -p1 -F0 -d "$ROCKSDB_SRC" < "$patch"
-              fi
-            done
+            # Within a directory, apply in LC_ALL=C order so every runner agrees; a bare
+            # glob follows the runner's locale. Zero-pad names if one must precede another.
+            while IFS= read -r patch; do
+              [ -f "$patch" ] || continue
+              echo "Applying experimental patch: $patch"
+              patch -p1 -F0 -d "$ROCKSDB_SRC" < "$patch"
+            done < <(printf '%s\n' "${GITHUB_WORKSPACE}/experimental-patches/$dir"/*.patch | LC_ALL=C sort)
           done
 
       - name: Build RocksDB (macos/linux glibc/windows)

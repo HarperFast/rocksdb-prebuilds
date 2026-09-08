@@ -37,39 +37,22 @@ jobs:
             [ -d "$dir" ] || continue
             name="$(basename "$dir")"
 
-            if [[ "$name" != *-* ]]; then
-              echo "::error::'$name' must be named <id>-<slug> (no '-' found)"
+            # Shared with the build resolver so the two cannot enforce different rules.
+            if ! problems="$(validate_patch_dir "$dir")"; then
+              while IFS= read -r problem; do
+                [[ -n "$problem" ]] && echo "::error::$problem"
+              done <<< "$problems"
               errors=1
               continue
             fi
 
             id="${name%%-*}"
-            slug="${name#*-}"
-            # Charset allowlist. The id is alphanumeric only: it becomes a semver
-            # prerelease segment, so a dot (`1.2`) or `+` would re-segment the tag and
-            # collide with the `<ids>.<revision>` form, and any shell metacharacter
-            # would be unsafe when the resolved dir name is used unquoted in a build.
-            # The slug is cosmetic (never reaches the tag) but must stay shell-safe.
-            if [[ ! "$id" =~ ^[A-Za-z0-9]+$ ]]; then
-              echo "::error::'$name' has a non-alphanumeric id ('$id'); ids must match ^[A-Za-z0-9]+$"
-              errors=1
-            fi
-            if [[ ! "$slug" =~ ^[A-Za-z0-9._-]+$ ]]; then
-              echo "::error::'$name' has an invalid slug ('$slug'); slugs must match ^[A-Za-z0-9._-]+$"
-              errors=1
-            fi
-
-            if ! compgen -G "$dir*.patch" > /dev/null; then
-              echo "::error::'$name' contains no .patch file"
-              errors=1
-            fi
-
-            canonical="$(canon_id "$id")"
-            if [[ -n "${id_owner[$canonical]:-}" ]]; then
-              echo "::error::id conflict: '$name' and '${id_owner[$canonical]}' resolve to the same id ($id)"
+            ckey="$(canon_collision_key "$id")"
+            if [[ -n "${id_owner[$ckey]:-}" ]]; then
+              echo "::error::id conflict: '$name' and '${id_owner[$ckey]}' resolve to the same id ($id)"
               errors=1
             else
-              id_owner[$canonical]="$name"
+              id_owner[$ckey]="$name"
             fi
           done
 
