@@ -43,6 +43,7 @@ jobs:
         run: |
           set -euo pipefail
           ROOT="experimental-patches"
+          source .github/scripts/experimental-ids.sh
 
           # Treat CR/newlines (a multiline dispatch value) as delimiters, replacing them
           # with commas: `read -ra` below stops at the first newline and would silently
@@ -70,7 +71,7 @@ jobs:
             name="$(basename "$dir")"
             [[ "$name" == *-* ]] || continue
             did="${name%%-*}"
-            if [[ "$did" =~ ^[0-9]+$ ]]; then key="n:$((10#$did))"; else key="s:$did"; fi
+            key="$(canon_id "$did")"
             # Enforce id-uniqueness here too: the validator gates merged code, but this
             # resolver also runs on any dispatched branch, which may not have passed it.
             if [[ -n "${dir_by_id[$key]:-}" ]]; then
@@ -86,7 +87,7 @@ jobs:
           for raw_id in "${REQ[@]}"; do
             read -r id <<< "$raw_id"   # trim surrounding whitespace only; interior space makes an invalid id fail loudly
             [[ -z "$id" ]] && continue
-            if [[ "$id" =~ ^[0-9]+$ ]]; then key="n:$((10#$id))"; else key="s:$id"; fi
+            key="$(canon_id "$id")"
             if [[ -z "${dir_by_id[$key]:-}" ]]; then
               echo "No experimental patch for id '$id'. Available ids:" >&2
               for k in "${!dir_by_id[@]}"; do echo "  - ${dir_by_id[$k]}" >&2; done
@@ -97,10 +98,13 @@ jobs:
             keys+=("$key")
           done
 
-          # Numeric ids sort ascending by value and before any string ids.
+          # Numeric ids sort ascending by value and before any string ids. Sorting by
+          # digit-count first orders arbitrary-length ids without arithmetic; printf
+          # '%020d' saturated at INT64_MAX and mis-ordered anything larger.
           sorted=$(for k in "${keys[@]}"; do
-            if [[ "$k" == n:* ]]; then printf '0\t%020d\t%s\n' "${k#n:}" "$k"; else printf '1\t%s\t%s\n' "${k#s:}" "$k"; fi
-          done | sort | cut -f3)
+            if [[ "$k" == n:* ]]; then num="${k#n:}"; printf '0\t%04d\t%s\t%s\n' "${#num}" "$num" "$k"
+            else printf '1\t0000\t%s\t%s\n' "${k#s:}" "$k"; fi
+          done | sort | cut -f4)
 
           dirs=""; segment=""; note=""
           for k in $sorted; do

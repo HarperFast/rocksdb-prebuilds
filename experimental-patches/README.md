@@ -28,6 +28,14 @@ experimental-patches/
   the id is everything before the first `-`, an id itself cannot contain a dash
   (`blob-dir` has id `blob`, slug `dir`).
 
+Every file and directory name here must also be **checkout-able on Windows**, since
+each release builds on Windows runners and one unusable path fails `actions/checkout`
+and takes down the whole release — not just experimental builds. Names are limited to
+`[A-Za-z0-9._-]`, may not end in a dot or space, may not be a reserved DOS device name
+(`CON`, `PRN`, `AUX`, `NUL`, `COM0`-`9`, `LPT0`-`9`), and may not differ from another
+path only by case. The validation workflow enforces all of this and a Windows checkout
+job backstops it.
+
 ## Running an experimental build
 
 Dispatch the build workflow with a comma-separated list of ids, e.g. `1, 3, 4`.

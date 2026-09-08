@@ -2,16 +2,19 @@ name: Validate experimental patches
 
 # Enforces the experimental-patches invariants so a build can resolve an id to
 # exactly one directory: every entry is `<id>-<slug>` with at least one .patch,
-# and no two ids collide (numeric ids compared by value, so 1 == 01 == 0001).
+# no two ids collide (numeric ids compared by value, so 1 == 01 == 0001), and
+# every path can be checked out on the Windows runners the release builds on.
 on:
   pull_request:
     paths:
       - "experimental-patches/**"
+      - ".github/scripts/experimental-ids.sh"
       - ".github/workflows/validate-experimental-patches.yml"
   push:
     branches: [main]
     paths:
       - "experimental-patches/**"
+      - ".github/scripts/experimental-ids.sh"
 
 jobs:
   validate:
@@ -26,6 +29,7 @@ jobs:
         run: |
           set -euo pipefail
           ROOT="experimental-patches"
+          source .github/scripts/experimental-ids.sh
           errors=0
           declare -A id_owner   # canonical id -> directory that claimed it
 
@@ -60,13 +64,7 @@ jobs:
               errors=1
             fi
 
-            # Canonical id: numeric ids collapse by value; others compare as strings.
-            if [[ "$id" =~ ^[0-9]+$ ]]; then
-              canonical="n:$((10#$id))"
-            else
-              canonical="s:$id"
-            fi
-
+            canonical="$(canon_id "$id")"
             if [[ -n "${id_owner[$canonical]:-}" ]]; then
               echo "::error::id conflict: '$name' and '${id_owner[$canonical]}' resolve to the same id ($id)"
               errors=1
@@ -75,8 +73,78 @@ jobs:
             fi
           done
 
+          # Windows portability of every tracked path, not just the directory name.
+          # Each release build runs `actions/checkout` on NTFS-backed windows runners,
+          # so one path that cannot be materialized there fails checkout and takes the
+          # whole release down -- including builds that requested no experimental patch.
+          declare -A lower_owner
+          while IFS= read -r path; do
+            [[ -z "$path" ]] && continue
+
+            prefix=""
+            IFS='/' read -ra parts <<< "$path"
+            for part in "${parts[@]}"; do
+              prefix="${prefix:+$prefix/}$part"
+
+              # Allowlist doubles as the illegal-character check: it excludes : < > " \ | ? *
+              # control characters and spaces, none of which NTFS can hold.
+              if [[ ! "$part" =~ ^[A-Za-z0-9._-]+$ ]]; then
+                echo "::error::$path: component '$part' has characters outside [A-Za-z0-9._-]; Windows cannot check out paths containing : < > \" \\ | ? * or spaces"
+                errors=1
+              fi
+              # Windows silently strips trailing dots/spaces, so such a path can never
+              # round-trip. The slug allowlist permits a trailing dot, hence this check.
+              if [[ "$part" == *. || "$part" == *" " ]]; then
+                echo "::error::$path: component '$part' ends with a dot or space, which Windows cannot create"
+                errors=1
+              fi
+              # Reserved DOS device names are unusable with or without an extension.
+              shopt -s nocasematch
+              if [[ "${part%%.*}" =~ ^(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])$ ]]; then
+                echo "::error::$path: component '$part' is the reserved Windows device name '${part%%.*}'"
+                errors=1
+              fi
+              shopt -u nocasematch
+
+              # NTFS is case-insensitive, so two paths differing only in case cannot
+              # coexist. Checked per prefix so colliding *directories* are caught too.
+              lower="${prefix,,}"
+              if [[ -n "${lower_owner[$lower]:-}" && "${lower_owner[$lower]}" != "$prefix" ]]; then
+                echo "::error::'$prefix' collides case-insensitively with '${lower_owner[$lower]}'; Windows cannot hold both"
+                errors=1
+              else
+                lower_owner[$lower]="$prefix"
+              fi
+            done
+          done < <(git ls-files "$ROOT")
+
           if [[ "$errors" -ne 0 ]]; then
             echo "Experimental-patches validation failed."
             exit 1
           fi
           echo "All experimental patches valid."
+
+  windows-checkout:
+    name: Windows checkout
+    runs-on: windows-latest
+    steps:
+      # Empirical backstop for the portability rules above: if a path cannot be
+      # materialized on Windows this checkout fails and gates the PR, catching
+      # anything the explicit checks miss (path length, future NTFS quirks).
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Confirm every experimental-patch path materialized
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+          while IFS= read -r path; do
+            [[ -z "$path" ]] && continue
+            if [[ ! -e "$path" ]]; then
+              echo "::error::'$path' is tracked but did not materialize on the Windows runner"
+              missing=1
+            fi
+          done < <(git ls-files experimental-patches)
+          [[ "$missing" -eq 0 ]] || exit 1
+          echo "All experimental-patch paths materialized on Windows."
