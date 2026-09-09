@@ -10,7 +10,7 @@ on:
         required: false
         type: string
       prerelease_revision:
-        description: Numeric prerelease revision for publishing a prerelease build of a RocksDB version (e.g. `1` for v11.1.2-1 or `rc2` for v11.1.2-rc2)
+        description: Prerelease revision for publishing a prerelease build of a RocksDB version. A single semver prerelease identifier - letters, digits, and hyphens only, no dots, and no leading zero on a purely numeric value (e.g. `1` for v11.1.2-1 or `rc2` for v11.1.2-rc2)
         required: false
         type: string
       experimental_patches:
@@ -134,14 +134,22 @@ jobs:
       - name: Get latest RocksDB release
         id: latest-rocksdb
         shell: bash
+        env:
+          REQUESTED: ${{ inputs.rocksdb_version }}
         run: |
           set -euo pipefail
-          REQUESTED="${{ inputs.rocksdb_version }}"
           if [[ -n "$REQUESTED" ]]; then
             TAG="${REQUESTED#v}"
           else
             URL="https://api.github.com/repos/facebook/rocksdb/releases/latest"
             TAG=$(curl -s -L -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" -X GET "$URL" | jq -r '.tag_name' | tr -d 'v')
+          fi
+          # TAG becomes a job output that later steps interpolate into shell bodies and
+          # a download URL, so constrain it to a tag-shaped token here rather than at
+          # each use. Permissive about upstream's naming, strict about metacharacters.
+          if [[ ! "$TAG" =~ ^[0-9][0-9A-Za-z.-]*$ ]]; then
+            echo "Refusing to build RocksDB tag 'v$TAG': expected a version-shaped tag" >&2
+            exit 1
           fi
           echo "Latest RocksDB release tag: v$TAG"
 
@@ -154,12 +162,15 @@ jobs:
           MAJOR="$(printf '%s\n' "$VERSION_H" | sed -n 's/^#define ROCKSDB_MAJOR \([0-9][0-9]*\).*/\1/p')"
           MINOR="$(printf '%s\n' "$VERSION_H" | sed -n 's/^#define ROCKSDB_MINOR \([0-9][0-9]*\).*/\1/p')"
           PATCH="$(printf '%s\n' "$VERSION_H" | sed -n 's/^#define ROCKSDB_PATCH \([0-9][0-9]*\).*/\1/p')"
-          if [[ -z "$MAJOR" || -z "$MINOR" || -z "$PATCH" ]]; then
-            echo "Failed to parse version.h from $VERSION_H_URL" >&2
+          VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          # Each sed prints one line per matching #define, so a duplicated define yields a
+          # multiline component, which corrupts the $GITHUB_OUTPUT write below. Checking
+          # the composed shape catches that as well as a failed parse.
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Failed to parse a version from version.h at $VERSION_H_URL (got '$VERSION')" >&2
             printf '%s\n' "$VERSION_H" >&2
             exit 1
           fi
-          VERSION="${MAJOR}.${MINOR}.${PATCH}"
           echo "Version from version.h: $VERSION"
 
           MISMATCH_NOTE=""
@@ -196,18 +207,29 @@ jobs:
       - name: Check if we should build
         id: check-build
         shell: bash
+        env:
+          REVISION: ${{ inputs.prerelease_revision }}
         run: |
           # Compare and publish using the version.h-derived version; the tag is only
           # the download locator.
           ROCKSDB_VERSION="${{ steps.latest-rocksdb.outputs.version_h }}"
           TAG_VERSION="${{ steps.latest-rocksdb.outputs.version }}"
-          REVISION="${{ inputs.prerelease_revision }}"
           SEGMENT="${{ steps.experimental.outputs.segment }}"
           SHOULD_BUILD=false
 
-          if [[ -n "$REVISION" && ! "$REVISION" =~ ^[0-9]+$ ]]; then
-            echo "prerelease_revision must be numeric" >&2
-            exit 1
+          if [[ -n "$REVISION" ]]; then
+            # One semver prerelease identifier, not a dotted chain: the experimental path
+            # below joins the revision to the id list with a dot itself, so a revision
+            # carrying its own dot would blur that boundary. Leading zeros are rejected
+            # only on purely numeric identifiers, per https://semver.org/#spec-item-9.
+            if [[ ! "$REVISION" =~ ^[0-9A-Za-z-]+$ ]]; then
+              echo "prerelease_revision must contain only letters, digits, and hyphens, with no dots (got '$REVISION')" >&2
+              exit 1
+            fi
+            if [[ "$REVISION" =~ ^[0-9]+$ && "$REVISION" =~ ^0[0-9] ]]; then
+              echo "prerelease_revision must not have a leading zero when purely numeric (got '$REVISION')" >&2
+              exit 1
+            fi
           fi
 
           # Compose the release version: <version>[-experimental-<ids>][<rev>].

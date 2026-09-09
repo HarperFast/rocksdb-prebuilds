@@ -7,9 +7,11 @@ The static RocksDB builds include bzip2, lz4, snappy, zlib, and zstd compression
 Releases: https://github.com/HarperFast/rocksdb-prebuilds/releases
 
 To publish a prerelease build of a RocksDB version (for example, to validate a build configuration
-change before the final release), manually run the workflow with that `rocksdb_version` and a numeric
-`prerelease_revision`. This publishes a prerelease such as `v11.1.2-1`, which sorts before the final
-`v11.1.2` release and does not replace it.
+change before the final release), manually run the workflow with that `rocksdb_version` and a
+`prerelease_revision`. The revision is one semver prerelease identifier - letters, digits, and
+hyphens only, with no dots and no leading zero on a purely numeric value - so `1` publishes
+`v11.1.2-1` and `rc2` publishes `v11.1.2-rc2`. Either sorts before the final `v11.1.2` release and
+does not replace it.
 
 | OS       | Arch                  | CRT Linkage     | Library Linkage | Filename |
 |----------|-----------------------|-----------------|-----------------|----------|
