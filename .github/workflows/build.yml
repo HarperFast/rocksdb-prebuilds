@@ -531,19 +531,6 @@ jobs:
             exit 1
           fi
 
-      - name: Configure AWS credentials
-        if: ${{ steps.verify-tag.outputs.lost_race != 'true' }}
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-2
-
-      - name: Upload artifacts to S3
-        if: ${{ steps.verify-tag.outputs.lost_race != 'true' }}
-        run: |
-          aws s3 cp artifacts/ s3://harper-artifacts/rocksdb-prebuilds/v${{ needs.check.outputs.release_version }}/ --recursive
-
       - name: Create release
         if: ${{ steps.verify-tag.outputs.lost_race != 'true' }}
         uses: softprops/action-gh-release@v2
@@ -561,6 +548,34 @@ jobs:
           tag_name: v${{ needs.check.outputs.release_version }}
           prerelease: ${{ inputs.prerelease_revision != '' || needs.check.outputs.experimental_dirs != '' }}
           token: ${{ secrets.GH_TOKEN }}
+
+      # Release first, so the tag claims this prefix. Best-effort because a re-run cannot
+      # repair a mirror failure - it stands down as a lost race - and no known consumer
+      # reads the mirror.
+      - name: Configure AWS credentials
+        id: aws-credentials
+        if: ${{ steps.verify-tag.outputs.lost_race != 'true' }}
+        continue-on-error: true
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-2
+
+      - name: Upload artifacts to S3
+        id: s3-mirror
+        if: ${{ steps.verify-tag.outputs.lost_race != 'true' && steps.aws-credentials.outcome == 'success' }}
+        continue-on-error: true
+        run: |
+          aws s3 cp artifacts/ s3://harper-artifacts/rocksdb-prebuilds/v${{ needs.check.outputs.release_version }}/ --recursive
+
+      - name: Warn if the S3 mirror is incomplete
+        if: ${{ steps.verify-tag.outputs.lost_race != 'true' && (steps.aws-credentials.outcome != 'success' || steps.s3-mirror.outcome != 'success') }}
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.check.outputs.release_version }}
+        run: |
+          echo "::warning title=S3 mirror incomplete::v$RELEASE_VERSION published to GitHub Releases, but the S3 mirror at s3://harper-artifacts/rocksdb-prebuilds/v$RELEASE_VERSION/ was not written or may be partial. Copy the release assets there by hand; the release itself is complete."
 
   on-release-success:
     if: success() && !cancelled() && needs.check.outputs.should_build == 'true' && needs.release.outputs.lost_race != 'true'
