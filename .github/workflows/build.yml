@@ -1,6 +1,13 @@
 name: Automated RocksDB Builds
 
 on:
+  # Only the inputs the validate job actually builds from: it applies the
+  # patches to a real RocksDB tree and runs upstream tests, which is too slow
+  # to spend on a pull request that cannot affect the result.
+  pull_request:
+    paths:
+      - "vcpkg-overlays/rocksdb/**"
+      - ".github/workflows/build.yml"
   schedule:
     - cron: "30 2 * * *"
   workflow_dispatch:
@@ -19,8 +26,72 @@ on:
         type: string
 
 jobs:
+  validate:
+    name: Validate RocksDB patches
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install audit dependency
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
+      - name: Download the pinned RocksDB release
+        id: rocksdb
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The inventories pin upstream line numbers, so this gate builds the
+          # release the patches were authored against; the nightly audit job is
+          # where drift against the latest release is caught.
+          TAG=$(tr -d '[:space:]' < vcpkg-overlays/rocksdb/patched-version.txt)
+          curl -sfL \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -o rocksdb.tar.gz \
+            "https://github.com/facebook/rocksdb/archive/refs/tags/${TAG}.tar.gz"
+          tar -xzf rocksdb.tar.gz
+          echo "source_dir=rocksdb-${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Apply patches without fuzz
+        shell: bash
+        run: |
+          set -euo pipefail
+          for patch_file in vcpkg-overlays/rocksdb/patches/*.patch; do
+            patch -p1 -F0 -d "${{ steps.rocksdb.outputs.source_dir }}" \
+              < "$patch_file"
+          done
+
+      - name: Audit blob path call sites
+        shell: bash
+        run: |
+          vcpkg-overlays/rocksdb/verify-blob-path-inventory.sh \
+            "${{ steps.rocksdb.outputs.source_dir }}"
+
+      - name: Build focused upstream tests
+        working-directory: ${{ steps.rocksdb.outputs.source_dir }}
+        shell: bash
+        run: |
+          make -j"$(nproc)" db_basic_test db_flush_test checkpoint_test \
+            backup_engine_test options_test options_settable_test
+
+      - name: Run focused upstream tests
+        working-directory: ${{ steps.rocksdb.outputs.source_dir }}
+        shell: bash
+        run: |
+          ./db_basic_test \
+            --gtest_filter='*PortableLiveFileCapture*:*RecoveryBlobDirSyncedBeforeFreshManifestPublish*'
+          ./db_flush_test \
+            --gtest_filter='*BlobDirIsFsyncedForOrdinaryAndAtomicFlush*'
+          ./checkpoint_test
+          ./backup_engine_test
+          ./options_test
+          ./options_settable_test
+
   check:
     name: Check for new release
+    if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     outputs:
       should_build: ${{ steps.check-build.outputs.should_build }}
@@ -251,9 +322,34 @@ jobs:
           echo "should_build=$SHOULD_BUILD" >> $GITHUB_OUTPUT
           echo "release_version=$RELEASE_VERSION" >> $GITHUB_OUTPUT
 
+  audit:
+    name: Audit RocksDB patches
+    needs: [check]
+    if: ${{ needs.check.outputs.should_build == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install audit dependency
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
+      - name: Apply and audit patches
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_DIR="rocksdb-${{ needs.check.outputs.version }}"
+          curl -sfL -o rocksdb.tar.gz \
+            "https://github.com/facebook/rocksdb/archive/refs/tags/v${{ needs.check.outputs.version }}.tar.gz"
+          tar -xzf rocksdb.tar.gz
+          for patch_file in vcpkg-overlays/rocksdb/patches/*.patch; do
+            patch -p1 -F0 -d "$SOURCE_DIR" < "$patch_file"
+          done
+          vcpkg-overlays/rocksdb/verify-blob-path-inventory.sh "$SOURCE_DIR"
+
   build:
     name: Build
-    needs: [check]
+    needs: [check, audit]
     if: ${{ needs.check.outputs.should_build == 'true' }}
     strategy:
       fail-fast: false

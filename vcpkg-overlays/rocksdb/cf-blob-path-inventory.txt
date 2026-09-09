@@ -1,0 +1,10 @@
+db/db_impl/db_impl_compaction_flush.cc:1067:            cfds[i]->ioptions().cf_paths[0].path, file_meta[i].fd.GetNumber());
+db/db_impl/db_impl_compaction_flush.cc:1141:        MakeTableFileName(cfd->ioptions().cf_paths[0].path, file_number);
+db/db_impl/db_impl_compaction_flush.cc:487:          cfd->ioptions().cf_paths[0].path, file_meta.fd.GetNumber());
+db/db_impl/db_impl_compaction_flush.cc:584:    const std::string& curr_path = cfd->ioptions().cf_paths[0].path;
+db/flush_job.cc:1228:      MakeTableFileName(cfd_->ioptions().cf_paths[0].path, file_number);
+db/version_builder.cc:1232:              MakeTableFileName(ioptions_->cf_paths[0].path, file_number));
+db/version_builder.cc:1315:          MakeTableFileName(ioptions_->cf_paths[0].path, file_number);
+include/rocksdb/advanced_options.h:1501:  // from. When empty (the default), blob files live in `cf_paths.front().path`
+include/rocksdb/advanced_options.h:1535:  // Default: empty (use cf_paths.front().path)
+options/cf_options.h:111:    return blob_dir.empty() ? cf_paths.front().path : blob_dir;
