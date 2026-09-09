@@ -1,7 +1,13 @@
 name: Automated RocksDB Builds
 
 on:
+  # Only the inputs the validate job actually builds from: it applies the
+  # patches to a real RocksDB tree and runs upstream tests, which is too slow
+  # to spend on a pull request that cannot affect the result.
   pull_request:
+    paths:
+      - "vcpkg-overlays/rocksdb/**"
+      - ".github/workflows/build.yml"
   schedule:
     - cron: "30 2 * * *"
   workflow_dispatch:
