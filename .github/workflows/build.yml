@@ -10,7 +10,7 @@ on:
         required: false
         type: string
       prerelease_revision:
-        description: Prerelease revision for publishing a prerelease build of a RocksDB version. A single semver prerelease identifier - letters, digits, and hyphens only, no dots, and no leading zero on a purely numeric value (e.g. `1` for v11.1.2-1 or `rc2` for v11.1.2-rc2)
+        description: Prerelease revision for publishing a prerelease build of a RocksDB version. A single semver prerelease identifier - letters, digits, and hyphens only, no dots, no leading zero on a purely numeric value, and not starting with `experimental` (e.g. `1` for v11.1.2-1 or `rc2` for v11.1.2-rc2)
         required: false
         type: string
       experimental_patches:
@@ -218,16 +218,24 @@ jobs:
           SHOULD_BUILD=false
 
           if [[ -n "$REVISION" ]]; then
-            # One semver prerelease identifier, not a dotted chain: the experimental path
-            # below joins the revision to the id list with a dot itself, so a revision
-            # carrying its own dot would blur that boundary. Leading zeros are rejected
-            # only on purely numeric identifiers, per https://semver.org/#spec-item-9.
-            if [[ ! "$REVISION" =~ ^[0-9A-Za-z-]+$ ]]; then
-              echo "prerelease_revision must contain only letters, digits, and hyphens, with no dots (got '$REVISION')" >&2
+            # One semver prerelease identifier. No dots: the composition below joins the
+            # revision to an id list with a dot, so a dotted revision would blur that
+            # boundary. No leading zero when purely numeric, per
+            # https://semver.org/#spec-item-9.
+            if [[ ! "$REVISION" =~ ^[0-9A-Za-z-]+$ || ! "$REVISION" =~ [0-9A-Za-z] ]]; then
+              echo "prerelease_revision must be letters, digits, and hyphens, with no dots and at least one letter or digit (got '$REVISION')" >&2
               exit 1
             fi
             if [[ "$REVISION" =~ ^[0-9]+$ && "$REVISION" =~ ^0[0-9] ]]; then
               echo "prerelease_revision must not have a leading zero when purely numeric (got '$REVISION')" >&2
+              exit 1
+            fi
+            # Otherwise a revision could mint a tag in the namespace the experimental
+            # path owns: `-experimental-2` with no patches applied publishes vanilla
+            # contents under that name and then blocks the real experimental build for
+            # id 2, which the numeric-only grammar made impossible.
+            if [[ "$REVISION" == experimental || "$REVISION" == experimental-* ]]; then
+              echo "prerelease_revision must not start with 'experimental': that prefix is reserved for experimental_patches builds (got '$REVISION')" >&2
               exit 1
             fi
           fi
