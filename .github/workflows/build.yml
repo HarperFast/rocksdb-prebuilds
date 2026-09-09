@@ -1,5 +1,12 @@
 name: Automated RocksDB Builds
 
+# Workflow-level `concurrency` cannot see `needs`, so this key approximates the release
+# version from the raw inputs the `check` job composes it from; the `release` job holds
+# the exact one. Empty inputs share a group on purpose: they resolve to the same version.
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.rocksdb_version }}-${{ inputs.prerelease_revision }}-${{ inputs.experimental_patches }}
+  cancel-in-progress: false
+
 on:
   schedule:
     - cron: "30 2 * * *"
@@ -236,9 +243,9 @@ jobs:
           fi
 
           if [[ "$SHOULD_BUILD" == true ]]; then
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --retry 3 --retry-connrefused \
               -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" \
-              "https://api.github.com/repos/${{ github.repository }}/releases/tags/v$RELEASE_VERSION")
+              "https://api.github.com/repos/${{ github.repository }}/releases/tags/v$RELEASE_VERSION" || true)
             if [[ "$STATUS" == 200 ]]; then
               echo "Release v$RELEASE_VERSION already exists; choose a new revision" >&2
               exit 1
@@ -488,6 +495,13 @@ jobs:
     name: Release
     needs: [check, build]
     if: ${{ needs.check.outputs.should_build == 'true' }}
+    outputs:
+      lost_race: ${{ steps.verify-tag.outputs.lost_race }}
+    # Two runs can clear the approximate workflow-level key and still resolve to the
+    # same release_version.
+    concurrency:
+      group: release-${{ needs.check.outputs.release_version }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -498,7 +512,27 @@ jobs:
         with:
           path: artifacts
 
+      - name: Verify tag is still unclaimed
+        id: verify-tag
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.check.outputs.release_version }}
+        run: |
+          # `|| true`: Actions' default `bash -e` would kill the step on the assignment.
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --retry 3 --retry-connrefused \
+            -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/v$RELEASE_VERSION" || true)
+          if [[ "$STATUS" == 200 ]]; then
+            # Standing down, not failing: the tag holds one run's artifacts either way.
+            echo "lost_race=true" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Release already published::v$RELEASE_VERSION was published by another run while this one was building; skipping publish. To ship this run's build instead, delete that release and re-dispatch, or pick a new revision."
+          elif [[ "$STATUS" != 404 ]]; then
+            echo "Unable to verify release v$RELEASE_VERSION (HTTP $STATUS)" >&2
+            exit 1
+          fi
+
       - name: Configure AWS credentials
+        if: ${{ steps.verify-tag.outputs.lost_race != 'true' }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -506,10 +540,12 @@ jobs:
           aws-region: us-east-2
 
       - name: Upload artifacts to S3
+        if: ${{ steps.verify-tag.outputs.lost_race != 'true' }}
         run: |
           aws s3 cp artifacts/ s3://harper-artifacts/rocksdb-prebuilds/v${{ needs.check.outputs.release_version }}/ --recursive
 
       - name: Create release
+        if: ${{ steps.verify-tag.outputs.lost_race != 'true' }}
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/**/*.tar.xz
@@ -527,7 +563,7 @@ jobs:
           token: ${{ secrets.GH_TOKEN }}
 
   on-release-success:
-    if: success() && !cancelled() && needs.check.outputs.should_build == 'true'
+    if: success() && !cancelled() && needs.check.outputs.should_build == 'true' && needs.release.outputs.lost_race != 'true'
     name: Release success
     needs: [check, release]
     runs-on: ubuntu-latest
