@@ -81,9 +81,6 @@ jobs:
           ./checkpoint_test
           ./backup_engine_test
           ./options_test
-          # Guards the patch's ColumnFamilyOptions registration: blob_dir has to
-          # be settable from an options string and excluded from the unset-byte
-          # scan, or this fails.
           ./options_settable_test
 
   check:

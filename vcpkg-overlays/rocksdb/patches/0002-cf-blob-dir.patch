@@ -93,18 +93,16 @@ index d8d39a2..6e6d8b8 100644
    FileSystem* const fs = immutable_options.fs.get();
    assert(fs);
 diff --git a/db/column_family.cc b/db/column_family.cc
-index a0cb190..5b8b555 100644
+index a0cb190..48f4f56 100644
 --- a/db/column_family.cc
 +++ b/db/column_family.cc
-@@ -599,6 +599,15 @@ std::vector<std::string> ColumnFamilyData::GetDbPaths() const {
+@@ -599,6 +599,13 @@ std::vector<std::string> ColumnFamilyData::GetDbPaths() const {
    for (const DbPath& db_path : ioptions_.cf_paths) {
      paths.emplace_back(db_path.path);
    }
-+  // Env path registration must cover the blob directory too when blob_dir puts
-+  // it outside cf_paths; Register and Unregister both read this, so it stays
-+  // balanced. Read the raw field rather than GetBlobDir(): an unset blob_dir
-+  // resolves to cf_paths.front(), which the loop above already covers, and
-+  // callers may hold options whose cf_paths was never populated.
++  // Raw field rather than GetBlobDir(): an unset blob_dir resolves to
++  // cf_paths.front(), already covered above, and callers may hold options whose
++  // cf_paths was never populated. Register and Unregister both read this.
 +  if (!ioptions_.blob_dir.empty() &&
 +      std::find(paths.begin(), paths.end(), ioptions_.blob_dir) == paths.end()) {
 +    paths.emplace_back(ioptions_.blob_dir);
@@ -112,15 +110,13 @@ index a0cb190..5b8b555 100644
    return paths;
  }
 
-@@ -1749,9 +1758,33 @@ Status ColumnFamilyData::AddDirectories(
+@@ -1749,9 +1756,31 @@ Status ColumnFamilyData::AddDirectories(
      }
    }
    assert(data_dirs_.size() == ioptions_.cf_paths.size());
 +
-+  // Blob files may live outside cf_paths (see blob_dir), in which case their
-+  // directory entries need their own handle to fsync -- the data_dirs_ handles
-+  // above never cover it. Always populated so callers need no fallback; it
-+  // aliases cf_paths.front()'s handle when blob_dir is unset.
++  // data_dirs_ never covers a blob_dir outside cf_paths. Always populated so
++  // callers need no fallback; aliases cf_paths.front()'s handle when unset.
 +  if (!data_dirs_.empty()) {
 +    const std::string& blob_dir = ioptions_.GetBlobDir();
 +    auto existing_dir = created_dirs->find(blob_dir);
@@ -147,21 +143,20 @@ index a0cb190..5b8b555 100644
    if (data_dirs_.empty()) {
      return nullptr;
 diff --git a/db/column_family.h b/db/column_family.h
-index f3b736d..09799f9 100644
+index f3b736d..ef04a61 100644
 --- a/db/column_family.h
 +++ b/db/column_family.h
-@@ -547,6 +547,10 @@ class ColumnFamilyData {
+@@ -547,6 +547,9 @@ class ColumnFamilyData {
 
    FSDirectory* GetDataDir(size_t path_id) const;
 
-+  // Directory holding this column family's blob files. Aliases the cf_paths
-+  // handle unless blob_dir moves them elsewhere.
++  // Aliases the cf_paths handle unless blob_dir moves blob files elsewhere.
 +  FSDirectory* GetBlobDir() const;
 +
    // full_history_ts_low_ can only increase.
    void SetFullHistoryTsLow(std::string ts_low) {
      assert(!ts_low.empty());
-@@ -726,6 +730,8 @@ class ColumnFamilyData {
+@@ -726,6 +729,8 @@ class ColumnFamilyData {
    // Directories corresponding to cf_paths.
    std::vector<std::shared_ptr<FSDirectory>> data_dirs_;
 
@@ -702,7 +697,7 @@ index cd58be3..d1ee8ab 100644
    // the oldest log depends on but uncommitted data in the oldest
    // log prevents the log from being released.
 diff --git a/db/db_impl/db_impl_compaction_flush.cc b/db/db_impl/db_impl_compaction_flush.cc
-index c8ce290..3bad082 100644
+index c8ce290..b29675c 100644
 --- a/db/db_impl/db_impl_compaction_flush.cc
 +++ b/db/db_impl/db_impl_compaction_flush.cc
 @@ -566,6 +566,14 @@ Status DBImpl::AtomicFlushMemTablesToOutputFiles(
@@ -747,7 +742,7 @@ index c8ce290..3bad082 100644
 
    if (s.ok() || s.IsShutdownInProgress()) {
 +    for (int i = 0; i != num_cfs; ++i) {
-+      if (pick_status[i] && jobs[i]->HasBlobFileAdditions()) {
++      if (jobs[i]->HasBlobFileAdditions()) {
 +        add_output_directory(cfds[i]->ioptions().GetBlobDir(),
 +                             GetBlobDir(cfds[i]));
 +      }
@@ -816,7 +811,7 @@ index 4884b0c..318c902 100644
    return all_db_paths;
  }
 diff --git a/db/db_impl/db_impl_open.cc b/db/db_impl/db_impl_open.cc
-index cc385bf..a4d5f31 100644
+index cc385bf..2034ccc 100644
 --- a/db/db_impl/db_impl_open.cc
 +++ b/db/db_impl/db_impl_open.cc
 @@ -2251,13 +2251,19 @@ Status DBImpl::WriteLevel0TableForRecovery(int job_id, ColumnFamilyData* cfd,
@@ -846,13 +841,12 @@ index cc385bf..a4d5f31 100644
    }
 
    if (s.ok() && has_output) {
-@@ -2682,6 +2688,15 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
+@@ -2682,6 +2688,14 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
        for (auto& cf_path : cf.options.cf_paths) {
          paths.emplace_back(cf_path.path);
        }
-+      // Only when explicitly set: an empty blob_dir resolves to a cf_paths
-+      // entry, which is already covered above. Pushing it unconditionally
-+      // would also inflate `paths` and disable the single-path NoSpace()
++      // Only when explicitly set: unset resolves to a cf_paths entry already
++      // in `paths`, and inflating `paths` disables the single-path NoSpace()
 +      // recovery below.
 +      if (!cf.options.blob_dir.empty() &&
 +          std::find(paths.begin(), paths.end(), cf.options.blob_dir) ==
@@ -902,16 +896,16 @@ index 5e87466..61c4c77 100644
          blob_file.GetBlobFileNumber(), blob_file.GetTotalBlobCount(),
          blob_file.GetTotalBlobBytes());
 diff --git a/db/flush_job.h b/db/flush_job.h
-index 6ea96bb..04a10b1 100644
+index 6ea96bb..9fa2637 100644
 --- a/db/flush_job.h
 +++ b/db/flush_job.h
 @@ -99,6 +99,11 @@ class FlushJob {
      return edit_->GetLogNumber();
    }
 
++  // Null edit_ means nothing was picked, so no blob files were written.
 +  bool HasBlobFileAdditions() const {
-+    assert(edit_ != nullptr);
-+    return !edit_->GetBlobFileAdditions().empty();
++    return edit_ != nullptr && !edit_->GetBlobFileAdditions().empty();
 +  }
 +
    // Stashes write-path blob files so WriteLevel0Table() can add them to the
