@@ -9,7 +9,8 @@ if [[ $# -ne 1 ]]; then
 fi
 
 cd "$1"
-make -j"$(nproc)" db_basic_test db_flush_test checkpoint_test \
+num_cores=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)
+make -j"$num_cores" db_basic_test db_flush_test checkpoint_test \
   backup_engine_test options_test options_settable_test
 
 ./db_basic_test \
