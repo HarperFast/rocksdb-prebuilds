@@ -12,6 +12,11 @@ numbers, and source text so every upstream call-site change requires review. Aft
 legitimate change, regenerate both inventories with
 `verify-blob-path-inventory.sh --update ROCKSDB_SOURCE_DIR`.
 
+`patched-version.txt` holds the upstream tag those inventories were generated from, and is the
+release the PR gate applies and tests against. Bump it in the same commit that rebases the patches
+and regenerates the inventories. The nightly build stays on the latest upstream release, so drift
+still fails the nightly audit rather than every open pull request.
+
 - `0002-cf-blob-dir.patch` — adds `AdvancedColumnFamilyOptions::blob_dir` so blob files can live on
   a different volume than the SST files, and defines `ROCKSDB_HAS_CF_BLOB_DIR` for feature
   detection. Consumed by `@harperfast/rocksdb-js` via its `blobs.dir` open option. The added C++

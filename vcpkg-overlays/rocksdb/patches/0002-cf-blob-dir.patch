@@ -702,7 +702,7 @@ index cd58be3..d1ee8ab 100644
    // the oldest log depends on but uncommitted data in the oldest
    // log prevents the log from being released.
 diff --git a/db/db_impl/db_impl_compaction_flush.cc b/db/db_impl/db_impl_compaction_flush.cc
-index c8ce290..b29675c 100644
+index c8ce290..3bad082 100644
 --- a/db/db_impl/db_impl_compaction_flush.cc
 +++ b/db/db_impl/db_impl_compaction_flush.cc
 @@ -566,6 +566,14 @@ Status DBImpl::AtomicFlushMemTablesToOutputFiles(
@@ -747,7 +747,7 @@ index c8ce290..b29675c 100644
 
    if (s.ok() || s.IsShutdownInProgress()) {
 +    for (int i = 0; i != num_cfs; ++i) {
-+      if (jobs[i]->HasBlobFileAdditions()) {
++      if (pick_status[i] && jobs[i]->HasBlobFileAdditions()) {
 +        add_output_directory(cfds[i]->ioptions().GetBlobDir(),
 +                             GetBlobDir(cfds[i]));
 +      }

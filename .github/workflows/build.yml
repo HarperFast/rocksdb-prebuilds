@@ -32,23 +32,21 @@ jobs:
       - name: Install audit dependency
         run: sudo apt-get update && sudo apt-get install -y ripgrep
 
-      - name: Download latest RocksDB release
+      - name: Download the pinned RocksDB release
         id: rocksdb
         shell: bash
         run: |
           set -euo pipefail
-          TAG=$(curl -sfL \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            https://api.github.com/repos/facebook/rocksdb/releases/latest \
-            | jq -er '.tag_name')
+          # The inventories pin upstream line numbers, so this gate builds the
+          # release the patches were authored against; the nightly audit job is
+          # where drift against the latest release is caught.
+          TAG=$(tr -d '[:space:]' < vcpkg-overlays/rocksdb/patched-version.txt)
           curl -sfL \
             -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             -o rocksdb.tar.gz \
             "https://github.com/facebook/rocksdb/archive/refs/tags/${TAG}.tar.gz"
           tar -xzf rocksdb.tar.gz
-          SOURCE_DIR=$(find . -maxdepth 1 -type d -name 'rocksdb-*' -print -quit)
-          test -n "$SOURCE_DIR"
-          echo "source_dir=$SOURCE_DIR" >> "$GITHUB_OUTPUT"
+          echo "source_dir=rocksdb-${TAG#v}" >> "$GITHUB_OUTPUT"
 
       - name: Apply patches without fuzz
         shell: bash
@@ -70,7 +68,7 @@ jobs:
         shell: bash
         run: |
           make -j"$(nproc)" db_basic_test db_flush_test checkpoint_test \
-            backup_engine_test options_test
+            backup_engine_test options_test options_settable_test
 
       - name: Run focused upstream tests
         working-directory: ${{ steps.rocksdb.outputs.source_dir }}
@@ -83,6 +81,10 @@ jobs:
           ./checkpoint_test
           ./backup_engine_test
           ./options_test
+          # Guards the patch's ColumnFamilyOptions registration: blob_dir has to
+          # be settable from an options string and excluded from the unset-byte
+          # scan, or this fails.
+          ./options_settable_test
 
   check:
     name: Check for new release

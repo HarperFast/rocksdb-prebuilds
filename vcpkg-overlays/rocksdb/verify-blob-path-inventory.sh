@@ -36,7 +36,7 @@ rg -n --no-heading 'BlobFileName\(' . \
   | sed 's#^\./##' \
   | sort > "$actual_inventory"
 
-rg -n --no-heading 'cf_paths\.(front\(\)|\[0\])\.path' . \
+rg -n --no-heading 'cf_paths(\.front\(\)|\[0\])\.path' . \
   -g '*.{cc,h}' \
   -g '!**/*test*' \
   -g '!utilities/blob_db/**' \
