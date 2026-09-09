@@ -6,6 +6,7 @@ on:
   # to spend on a pull request that cannot affect the result.
   pull_request:
     paths:
+      - "experimental-patches/**"
       - "vcpkg-overlays/rocksdb/**"
       - ".github/workflows/build.yml"
   schedule:
@@ -27,7 +28,7 @@ on:
 
 jobs:
   validate:
-    name: Validate RocksDB patches
+    name: Validate experimental patches
     if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -38,56 +39,47 @@ jobs:
       - name: Install audit dependency
         run: sudo apt-get update && sudo apt-get install -y ripgrep
 
-      - name: Download the pinned RocksDB release
-        id: rocksdb
+      - name: Apply and verify each experimental patch
         shell: bash
         run: |
           set -euo pipefail
-          # The inventories pin upstream line numbers, so this gate builds the
-          # release the patches were authored against; the nightly audit job is
-          # where drift against the latest release is caught.
-          TAG=$(tr -d '[:space:]' < vcpkg-overlays/rocksdb/patched-version.txt)
-          curl -sfL \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            -o rocksdb.tar.gz \
-            "https://github.com/facebook/rocksdb/archive/refs/tags/${TAG}.tar.gz"
-          tar -xzf rocksdb.tar.gz
-          echo "source_dir=rocksdb-${TAG#v}" >> "$GITHUB_OUTPUT"
+          shopt -s nullglob
 
-      - name: Apply patches without fuzz
-        shell: bash
-        run: |
-          set -euo pipefail
-          for patch_file in vcpkg-overlays/rocksdb/patches/*.patch; do
-            patch -p1 -F0 -d "${{ steps.rocksdb.outputs.source_dir }}" \
-              < "$patch_file"
+          run_hook() {   # name, dir, hook file -- present but non-executable is an error,
+                         # never a silent skip
+            local name="$1" hook="$2" src="$3"
+            [[ -f "$hook" ]] || return 0
+            if [[ ! -x "$hook" ]]; then
+              echo "::error::$name: $(basename "$hook") is not executable; chmod +x it"
+              return 1
+            fi
+            echo "Running $(basename "$hook") for $name"
+            "$hook" "$src"
+          }
+
+          for dir in experimental-patches/*/; do
+            name="$(basename "$dir")"
+
+            # Each patch pins the release its author verified it against. Without
+            # that we do not know what to build, so there is nothing to gate on.
+            if [[ ! -f "${dir}patched-version.txt" ]]; then
+              echo "::notice::$name has no patched-version.txt; skipping build gate"
+              continue
+            fi
+            TAG="$(tr -d '[:space:]' < "${dir}patched-version.txt")"
+            SRC="rocksdb-${TAG#v}"
+
+            echo "::group::$name against $TAG"
+            rm -rf "$SRC"
+            curl -sfL -o rocksdb.tar.gz \
+              "https://github.com/facebook/rocksdb/archive/refs/tags/${TAG}.tar.gz"
+            tar -xzf rocksdb.tar.gz
+
+            .github/scripts/apply-patches.sh "$SRC" "$name"
+            run_hook "$name" "${dir}audit.sh" "$SRC"
+            run_hook "$name" "${dir}test.sh" "$SRC"
+            echo "::endgroup::"
           done
-
-      - name: Audit blob path call sites
-        shell: bash
-        run: |
-          vcpkg-overlays/rocksdb/verify-blob-path-inventory.sh \
-            "${{ steps.rocksdb.outputs.source_dir }}"
-
-      - name: Build focused upstream tests
-        working-directory: ${{ steps.rocksdb.outputs.source_dir }}
-        shell: bash
-        run: |
-          make -j"$(nproc)" db_basic_test db_flush_test checkpoint_test \
-            backup_engine_test options_test options_settable_test
-
-      - name: Run focused upstream tests
-        working-directory: ${{ steps.rocksdb.outputs.source_dir }}
-        shell: bash
-        run: |
-          ./db_basic_test \
-            --gtest_filter='*PortableLiveFileCapture*:*RecoveryBlobDirSyncedBeforeFreshManifestPublish*'
-          ./db_flush_test \
-            --gtest_filter='*BlobDirIsFsyncedForOrdinaryAndAtomicFlush*'
-          ./checkpoint_test
-          ./backup_engine_test
-          ./options_test
-          ./options_settable_test
 
   check:
     name: Check for new release
@@ -323,7 +315,7 @@ jobs:
           echo "release_version=$RELEASE_VERSION" >> $GITHUB_OUTPUT
 
   audit:
-    name: Audit RocksDB patches
+    name: Audit experimental patches
     needs: [check]
     if: ${{ needs.check.outputs.should_build == 'true' }}
     runs-on: ubuntu-latest
@@ -334,18 +326,68 @@ jobs:
       - name: Install audit dependency
         run: sudo apt-get update && sudo apt-get install -y ripgrep
 
-      - name: Apply and audit patches
+      - name: Audit each experimental patch against the release being built
         shell: bash
+        env:
+          # Only the patches this build actually applies may fail it. Everything else
+          # is reported so drift is visible without blocking a release it is not in.
+          IN_BUILD: ${{ needs.check.outputs.experimental_dirs }}
         run: |
-          set -euo pipefail
-          SOURCE_DIR="rocksdb-${{ needs.check.outputs.version }}"
-          curl -sfL -o rocksdb.tar.gz \
-            "https://github.com/facebook/rocksdb/archive/refs/tags/v${{ needs.check.outputs.version }}.tar.gz"
-          tar -xzf rocksdb.tar.gz
-          for patch_file in vcpkg-overlays/rocksdb/patches/*.patch; do
-            patch -p1 -F0 -d "$SOURCE_DIR" < "$patch_file"
+          set -uo pipefail
+          shopt -s nullglob
+          VERSION="${{ needs.check.outputs.version }}"
+          SRC="rocksdb-${VERSION}"
+
+          # Guarded explicitly: this job gates the build, so a codeload flake must
+          # read as infrastructure failure rather than as patch drift.
+          if ! curl -sfL -o rocksdb.tar.gz \
+            "https://github.com/facebook/rocksdb/archive/refs/tags/v${VERSION}.tar.gz"; then
+            echo "::error::could not download RocksDB v$VERSION"
+            exit 1
+          fi
+
+          blocking=0
+          for dir in experimental-patches/*/; do
+            name="$(basename "$dir")"
+            in_build=0
+            for requested in $IN_BUILD; do
+              [[ "$requested" == "$name" ]] && in_build=1
+            done
+
+            echo "::group::$name against v$VERSION"
+            rm -rf "$SRC"
+            if ! tar -xzf rocksdb.tar.gz; then
+              echo "::error::could not extract RocksDB v$VERSION"
+              exit 1
+            fi
+
+            # Distinct causes get distinct messages: "rebase it" is wrong advice for a
+            # patch that applied cleanly and whose audit found an upstream change.
+            problem=""
+            if ! .github/scripts/apply-patches.sh "$SRC" "$name"; then
+              problem="no longer applies cleanly to RocksDB v$VERSION; rebase it"
+            elif [[ -f "${dir}audit.sh" && ! -x "${dir}audit.sh" ]]; then
+              problem="has a non-executable audit.sh; chmod +x it"
+            elif [[ -x "${dir}audit.sh" ]] && ! "${dir}audit.sh" "$SRC"; then
+              problem="applies cleanly but its audit.sh failed; upstream likely changed a site the patch must cover"
+            fi
+
+            if [[ -n "$problem" ]]; then
+              if [[ "$in_build" -eq 1 ]]; then
+                echo "::error::$name $problem -- this build applies it, so it must not ship"
+                blocking=1
+              else
+                echo "::warning::$name $problem -- not applied by this build, so it is not blocking"
+              fi
+            fi
+            echo "::endgroup::"
           done
-          vcpkg-overlays/rocksdb/verify-blob-path-inventory.sh "$SOURCE_DIR"
+
+          if [[ "$blocking" -eq 1 ]]; then
+            echo "An experimental patch this build applies failed its audit."
+            exit 1
+          fi
+          echo "No blocking drift for RocksDB v$VERSION."
 
   build:
     name: Build
@@ -425,26 +467,9 @@ jobs:
 
           ROCKSDB_SRC="${GITHUB_WORKSPACE}/rocksdb-${{ needs.check.outputs.version }}"
 
-          # -F0 (zero fuzz): a patch whose context has drifted in a new RocksDB
-          # version fails loudly instead of fuzzy-matching a hunk into the wrong site.
-          for patch in "${GITHUB_WORKSPACE}/vcpkg-overlays/rocksdb/patches"/*.patch; do
-            if [ -f "$patch" ]; then
-              echo "Applying patch: $patch"
-              patch -p1 -F0 -d "$ROCKSDB_SRC" < "$patch"
-            fi
-          done
-
-          # Experimental patches, resolved and ordered by the check job. Applied
-          # after the official patches; empty unless the build requested them.
-          for dir in $EXPERIMENTAL_DIRS; do
-            # Within a directory, apply in LC_ALL=C order so every runner agrees; a bare
-            # glob follows the runner's locale. Zero-pad names if one must precede another.
-            while IFS= read -r patch; do
-              [ -f "$patch" ] || continue
-              echo "Applying experimental patch: $patch"
-              patch -p1 -F0 -d "$ROCKSDB_SRC" < "$patch"
-            done < <(printf '%s\n' "${GITHUB_WORKSPACE}/experimental-patches/$dir"/*.patch | LC_ALL=C sort)
-          done
+          # Official patches, then any requested experimental ones. Shared with the
+          # PR gate and the nightly audit so they prove the stack this actually ships.
+          .github/scripts/apply-patches.sh "$ROCKSDB_SRC" ${EXPERIMENTAL_DIRS}
 
       - name: Build RocksDB (macos/linux glibc/windows)
         if: ${{ matrix.platform.target != 'linux-x64-musl' && matrix.platform.target != 'linux-arm64-musl' }}
