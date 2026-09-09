@@ -6,6 +6,7 @@ on:
   # to spend on a pull request that cannot affect the result.
   pull_request:
     paths:
+      - "experimental-patches/**"
       - "vcpkg-overlays/rocksdb/**"
       - ".github/workflows/build.yml"
   schedule:
@@ -27,7 +28,7 @@ on:
 
 jobs:
   validate:
-    name: Validate RocksDB patches
+    name: Validate experimental patches
     if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -38,56 +39,54 @@ jobs:
       - name: Install audit dependency
         run: sudo apt-get update && sudo apt-get install -y ripgrep
 
-      - name: Download the pinned RocksDB release
-        id: rocksdb
+      - name: Apply and verify each experimental patch
         shell: bash
         run: |
           set -euo pipefail
-          # The inventories pin upstream line numbers, so this gate builds the
-          # release the patches were authored against; the nightly audit job is
-          # where drift against the latest release is caught.
-          TAG=$(tr -d '[:space:]' < vcpkg-overlays/rocksdb/patched-version.txt)
-          curl -sfL \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            -o rocksdb.tar.gz \
-            "https://github.com/facebook/rocksdb/archive/refs/tags/${TAG}.tar.gz"
-          tar -xzf rocksdb.tar.gz
-          echo "source_dir=rocksdb-${TAG#v}" >> "$GITHUB_OUTPUT"
+          shopt -s nullglob
 
-      - name: Apply patches without fuzz
-        shell: bash
-        run: |
-          set -euo pipefail
-          for patch_file in vcpkg-overlays/rocksdb/patches/*.patch; do
-            patch -p1 -F0 -d "${{ steps.rocksdb.outputs.source_dir }}" \
-              < "$patch_file"
+          for dir in experimental-patches/*/; do
+            name="$(basename "$dir")"
+
+            # Each patch pins the release its author verified it against. Without
+            # that we do not know what to build, so there is nothing to gate on.
+            if [[ ! -f "${dir}patched-version.txt" ]]; then
+              echo "::notice::$name has no patched-version.txt; skipping build gate"
+              continue
+            fi
+            TAG="$(tr -d '[:space:]' < "${dir}patched-version.txt")"
+            SRC="rocksdb-${TAG#v}"
+
+            echo "::group::$name against $TAG"
+            rm -rf "$SRC"
+            curl -sfL -o rocksdb.tar.gz \
+              "https://github.com/facebook/rocksdb/archive/refs/tags/${TAG}.tar.gz"
+            tar -xzf rocksdb.tar.gz
+
+            # Official patches first, then this experimental patch: the same order,
+            # and the same zero fuzz, the release build uses.
+            for patch_file in vcpkg-overlays/rocksdb/patches/*.patch; do
+              patch -p1 -F0 -d "$SRC" < "$patch_file"
+            done
+            while IFS= read -r patch_file; do
+              [ -f "$patch_file" ] || continue
+              patch -p1 -F0 -d "$SRC" < "$patch_file"
+            done < <(printf '%s\n' "$dir"*.patch | LC_ALL=C sort)
+
+            # Optional per-patch hooks, so this workflow holds no patch-specific
+            # knowledge: audit.sh is cheap and also runs nightly, test.sh is the
+            # expensive build-and-run and is PR-only.
+            if [[ -x "${dir}audit.sh" ]]; then
+              "${dir}audit.sh" "$SRC"
+            fi
+            if [[ -x "${dir}test.sh" ]]; then
+              "${dir}test.sh" "$SRC"
+            fi
+            if [[ ! -x "${dir}audit.sh" && ! -x "${dir}test.sh" ]]; then
+              echo "::notice::$name has no audit.sh or test.sh; verified that it applies at -F0"
+            fi
+            echo "::endgroup::"
           done
-
-      - name: Audit blob path call sites
-        shell: bash
-        run: |
-          vcpkg-overlays/rocksdb/verify-blob-path-inventory.sh \
-            "${{ steps.rocksdb.outputs.source_dir }}"
-
-      - name: Build focused upstream tests
-        working-directory: ${{ steps.rocksdb.outputs.source_dir }}
-        shell: bash
-        run: |
-          make -j"$(nproc)" db_basic_test db_flush_test checkpoint_test \
-            backup_engine_test options_test options_settable_test
-
-      - name: Run focused upstream tests
-        working-directory: ${{ steps.rocksdb.outputs.source_dir }}
-        shell: bash
-        run: |
-          ./db_basic_test \
-            --gtest_filter='*PortableLiveFileCapture*:*RecoveryBlobDirSyncedBeforeFreshManifestPublish*'
-          ./db_flush_test \
-            --gtest_filter='*BlobDirIsFsyncedForOrdinaryAndAtomicFlush*'
-          ./checkpoint_test
-          ./backup_engine_test
-          ./options_test
-          ./options_settable_test
 
   check:
     name: Check for new release
@@ -323,10 +322,14 @@ jobs:
           echo "release_version=$RELEASE_VERSION" >> $GITHUB_OUTPUT
 
   audit:
-    name: Audit RocksDB patches
+    name: Audit experimental patches against latest
     needs: [check]
     if: ${{ needs.check.outputs.should_build == 'true' }}
     runs-on: ubuntu-latest
+    # Reports drift, never blocks. An experimental patch is not in the nightly
+    # release, so it must not be able to fail one -- that coupling is exactly what
+    # moving these patches out of the official overlay removed.
+    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -334,22 +337,53 @@ jobs:
       - name: Install audit dependency
         run: sudo apt-get update && sudo apt-get install -y ripgrep
 
-      - name: Apply and audit patches
+      - name: Check each experimental patch against the release being built
         shell: bash
         run: |
-          set -euo pipefail
-          SOURCE_DIR="rocksdb-${{ needs.check.outputs.version }}"
+          set -uo pipefail
+          shopt -s nullglob
+          VERSION="${{ needs.check.outputs.version }}"
+          SRC="rocksdb-${VERSION}"
           curl -sfL -o rocksdb.tar.gz \
-            "https://github.com/facebook/rocksdb/archive/refs/tags/v${{ needs.check.outputs.version }}.tar.gz"
-          tar -xzf rocksdb.tar.gz
-          for patch_file in vcpkg-overlays/rocksdb/patches/*.patch; do
-            patch -p1 -F0 -d "$SOURCE_DIR" < "$patch_file"
+            "https://github.com/facebook/rocksdb/archive/refs/tags/v${VERSION}.tar.gz"
+
+          drift=0
+          for dir in experimental-patches/*/; do
+            name="$(basename "$dir")"
+            echo "::group::$name against v$VERSION"
+            rm -rf "$SRC"
+            tar -xzf rocksdb.tar.gz
+            ok=1
+
+            for patch_file in vcpkg-overlays/rocksdb/patches/*.patch; do
+              patch -p1 -F0 -d "$SRC" < "$patch_file" || ok=0
+            done
+            while IFS= read -r patch_file; do
+              [ -f "$patch_file" ] || continue
+              patch -p1 -F0 -d "$SRC" < "$patch_file" || ok=0
+            done < <(printf '%s\n' "$dir"*.patch | LC_ALL=C sort)
+
+            # Only the cheap hook here; test.sh is a PR-time cost.
+            if [[ "$ok" -eq 1 && -x "${dir}audit.sh" ]]; then
+              "${dir}audit.sh" "$SRC" || ok=0
+            fi
+
+            if [[ "$ok" -eq 0 ]]; then
+              echo "::warning::$name no longer applies cleanly to RocksDB v$VERSION; rebase it before the next experimental build"
+              drift=1
+            fi
+            echo "::endgroup::"
           done
-          vcpkg-overlays/rocksdb/verify-blob-path-inventory.sh "$SOURCE_DIR"
+
+          if [[ "$drift" -eq 1 ]]; then
+            echo "One or more experimental patches have drifted against v$VERSION."
+            exit 1
+          fi
+          echo "All experimental patches still apply to v$VERSION."
 
   build:
     name: Build
-    needs: [check, audit]
+    needs: [check]
     if: ${{ needs.check.outputs.should_build == 'true' }}
     strategy:
       fail-fast: false

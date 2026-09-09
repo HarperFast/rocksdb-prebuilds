@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Expensive verification hook: PR gate only. Builds and runs the upstream tests
+# that cover blob_dir. Receives the already-patched RocksDB source tree.
+set -euo pipefail
+
+if [[ $# -ne 1 ]]; then
+  echo "usage: $0 ROCKSDB_SOURCE_DIR" >&2
+  exit 2
+fi
+
+cd "$1"
+make -j"$(nproc)" db_basic_test db_flush_test checkpoint_test \
+  backup_engine_test options_test options_settable_test
+
+./db_basic_test \
+  --gtest_filter='*PortableLiveFileCapture*:*RecoveryBlobDirSyncedBeforeFreshManifestPublish*'
+./db_flush_test \
+  --gtest_filter='*BlobDirIsFsyncedForOrdinaryAndAtomicFlush*'
+./checkpoint_test
+./backup_engine_test
+./options_test
+./options_settable_test

@@ -17,7 +17,17 @@ experimental-patches/
   0000-example-noop/
     0000-example-noop.patch   # one or more *.patch files, applied with `patch -p1 -F0`
     README.md                 # what it does, target RocksDB version, risks
+  0001-cf-blob-dir/
+    0001-cf-blob-dir.patch
+    README.md
+    patched-version.txt       # optional: the upstream tag this was verified against
+    audit.sh                  # optional: cheap check, runs on PRs and nightly
+    test.sh                   # optional: expensive check, runs on PRs only
+    ...                       # any other support files the patch needs
 ```
+
+Only `*.patch` files are applied; anything else in the directory is inert to the
+build, so a patch can keep whatever support files it needs beside it.
 
 - **id** — everything before the first `-`. Ids must be unique. Numeric ids are
   compared by value, so `1`, `01`, and `0001` are the *same* id and cannot coexist
@@ -50,3 +60,19 @@ collides with a clean release and is obviously experimental.
 
 Patches apply with `patch -p1 -F0` (zero fuzz) against a fresh upstream tarball.
 Author against a specific RocksDB version and record it in the patch's README — this way, a version bump that shifts a hunk's context fails the build loudly instead of silently landing in the wrong place.
+
+## Verification hooks
+
+Three optional files let a patch carry its own verification, so
+[`build.yml`](../.github/workflows/build.yml) needs no knowledge of any particular patch:
+
+| File | Purpose |
+|---|---|
+| `patched-version.txt` | The upstream tag (e.g. `v11.8.1`) the patch was verified against. Without it the PR gate cannot know what to build, and skips that patch. |
+| `audit.sh <src>` | Cheap check against the **already-patched** source tree. Runs on every PR *and* nightly against the release being built. |
+| `test.sh <src>` | Expensive check (building and running upstream tests). Runs on PRs only. |
+
+Both hooks receive the patched RocksDB source directory and should exit non-zero on
+failure. On a PR they gate the merge; the nightly runs `audit.sh` only, and **reports
+drift without failing the release** — an experimental patch is not in the nightly
+build, so it must never be able to break one.
