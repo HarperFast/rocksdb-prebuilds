@@ -1,0 +1,17 @@
+Example experimental patch (id 0): inserts a no-op marker comment into
+version.h. It changes no behavior and exists only to exercise the
+experimental-patches pipeline end to end.
+
+Authored against RocksDB v11.8.1. Applied with `patch -p1 -F0`, so if a
+context line drifts in another version it fails loudly rather than
+fuzzing into the wrong place — build with `rocksdb_version: 11.8.1` to try it.
+
+--- a/include/rocksdb/version.h
++++ b/include/rocksdb/version.h
+@@ -5,3 +5,6 @@
+ #pragma once
++// rocksdb-prebuilds experimental example patch (id 0): no-op marker demonstrating
++// the experimental-patches pipeline. Builds identically to stock RocksDB.
++//
+
+ #include <string>
