@@ -73,6 +73,12 @@ Three optional files let a patch carry its own verification, so
 | `test.sh <src>` | Expensive check (building and running upstream tests). Runs on PRs only. |
 
 Both hooks receive the patched RocksDB source directory and should exit non-zero on
-failure. On a PR they gate the merge; the nightly runs `audit.sh` only, and **reports
-drift without failing the release** — an experimental patch is not in the nightly
-build, so it must never be able to break one.
+failure, and a hook that exists but is not executable is an error rather than a
+silent skip.
+
+On a PR they gate the merge. The nightly runs `audit.sh` only, against the release
+being built, and **fails only the builds that actually apply the patch**: a plain
+nightly reports drift as a warning and still ships, while a dispatched
+`experimental_patches` build that includes a drifted patch is blocked. Both halves
+matter — an experimental patch must not break a release it is not in, but it must
+also never ship in one that *does* include it without passing its own audit.

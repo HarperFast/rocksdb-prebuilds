@@ -45,6 +45,18 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
 
+          run_hook() {   # name, dir, hook file -- present but non-executable is an error,
+                         # never a silent skip
+            local name="$1" hook="$2" src="$3"
+            [[ -f "$hook" ]] || return 0
+            if [[ ! -x "$hook" ]]; then
+              echo "::error::$name: $(basename "$hook") is not executable; chmod +x it"
+              return 1
+            fi
+            echo "Running $(basename "$hook") for $name"
+            "$hook" "$src"
+          }
+
           for dir in experimental-patches/*/; do
             name="$(basename "$dir")"
 
@@ -63,28 +75,9 @@ jobs:
               "https://github.com/facebook/rocksdb/archive/refs/tags/${TAG}.tar.gz"
             tar -xzf rocksdb.tar.gz
 
-            # Official patches first, then this experimental patch: the same order,
-            # and the same zero fuzz, the release build uses.
-            for patch_file in vcpkg-overlays/rocksdb/patches/*.patch; do
-              patch -p1 -F0 -d "$SRC" < "$patch_file"
-            done
-            while IFS= read -r patch_file; do
-              [ -f "$patch_file" ] || continue
-              patch -p1 -F0 -d "$SRC" < "$patch_file"
-            done < <(printf '%s\n' "$dir"*.patch | LC_ALL=C sort)
-
-            # Optional per-patch hooks, so this workflow holds no patch-specific
-            # knowledge: audit.sh is cheap and also runs nightly, test.sh is the
-            # expensive build-and-run and is PR-only.
-            if [[ -x "${dir}audit.sh" ]]; then
-              "${dir}audit.sh" "$SRC"
-            fi
-            if [[ -x "${dir}test.sh" ]]; then
-              "${dir}test.sh" "$SRC"
-            fi
-            if [[ ! -x "${dir}audit.sh" && ! -x "${dir}test.sh" ]]; then
-              echo "::notice::$name has no audit.sh or test.sh; verified that it applies at -F0"
-            fi
+            .github/scripts/apply-patches.sh "$SRC" "$name"
+            run_hook "$name" "${dir}audit.sh" "$SRC"
+            run_hook "$name" "${dir}test.sh" "$SRC"
             echo "::endgroup::"
           done
 
@@ -322,14 +315,10 @@ jobs:
           echo "release_version=$RELEASE_VERSION" >> $GITHUB_OUTPUT
 
   audit:
-    name: Audit experimental patches against latest
+    name: Audit experimental patches
     needs: [check]
     if: ${{ needs.check.outputs.should_build == 'true' }}
     runs-on: ubuntu-latest
-    # Reports drift, never blocks. An experimental patch is not in the nightly
-    # release, so it must not be able to fail one -- that coupling is exactly what
-    # moving these patches out of the official overlay removed.
-    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -337,53 +326,72 @@ jobs:
       - name: Install audit dependency
         run: sudo apt-get update && sudo apt-get install -y ripgrep
 
-      - name: Check each experimental patch against the release being built
+      - name: Audit each experimental patch against the release being built
         shell: bash
+        env:
+          # Only the patches this build actually applies may fail it. Everything else
+          # is reported so drift is visible without blocking a release it is not in.
+          IN_BUILD: ${{ needs.check.outputs.experimental_dirs }}
         run: |
           set -uo pipefail
           shopt -s nullglob
           VERSION="${{ needs.check.outputs.version }}"
           SRC="rocksdb-${VERSION}"
-          curl -sfL -o rocksdb.tar.gz \
-            "https://github.com/facebook/rocksdb/archive/refs/tags/v${VERSION}.tar.gz"
 
-          drift=0
+          # Guarded explicitly: this job gates the build, so a codeload flake must
+          # read as infrastructure failure rather than as patch drift.
+          if ! curl -sfL -o rocksdb.tar.gz \
+            "https://github.com/facebook/rocksdb/archive/refs/tags/v${VERSION}.tar.gz"; then
+            echo "::error::could not download RocksDB v$VERSION"
+            exit 1
+          fi
+
+          blocking=0
           for dir in experimental-patches/*/; do
             name="$(basename "$dir")"
+            in_build=0
+            for requested in $IN_BUILD; do
+              [[ "$requested" == "$name" ]] && in_build=1
+            done
+
             echo "::group::$name against v$VERSION"
             rm -rf "$SRC"
-            tar -xzf rocksdb.tar.gz
-            ok=1
-
-            for patch_file in vcpkg-overlays/rocksdb/patches/*.patch; do
-              patch -p1 -F0 -d "$SRC" < "$patch_file" || ok=0
-            done
-            while IFS= read -r patch_file; do
-              [ -f "$patch_file" ] || continue
-              patch -p1 -F0 -d "$SRC" < "$patch_file" || ok=0
-            done < <(printf '%s\n' "$dir"*.patch | LC_ALL=C sort)
-
-            # Only the cheap hook here; test.sh is a PR-time cost.
-            if [[ "$ok" -eq 1 && -x "${dir}audit.sh" ]]; then
-              "${dir}audit.sh" "$SRC" || ok=0
+            if ! tar -xzf rocksdb.tar.gz; then
+              echo "::error::could not extract RocksDB v$VERSION"
+              exit 1
             fi
 
-            if [[ "$ok" -eq 0 ]]; then
-              echo "::warning::$name no longer applies cleanly to RocksDB v$VERSION; rebase it before the next experimental build"
-              drift=1
+            # Distinct causes get distinct messages: "rebase it" is wrong advice for a
+            # patch that applied cleanly and whose audit found an upstream change.
+            problem=""
+            if ! .github/scripts/apply-patches.sh "$SRC" "$name"; then
+              problem="no longer applies cleanly to RocksDB v$VERSION; rebase it"
+            elif [[ -f "${dir}audit.sh" && ! -x "${dir}audit.sh" ]]; then
+              problem="has a non-executable audit.sh; chmod +x it"
+            elif [[ -x "${dir}audit.sh" ]] && ! "${dir}audit.sh" "$SRC"; then
+              problem="applies cleanly but its audit.sh failed; upstream likely changed a site the patch must cover"
+            fi
+
+            if [[ -n "$problem" ]]; then
+              if [[ "$in_build" -eq 1 ]]; then
+                echo "::error::$name $problem -- this build applies it, so it must not ship"
+                blocking=1
+              else
+                echo "::warning::$name $problem -- not applied by this build, so it is not blocking"
+              fi
             fi
             echo "::endgroup::"
           done
 
-          if [[ "$drift" -eq 1 ]]; then
-            echo "One or more experimental patches have drifted against v$VERSION."
+          if [[ "$blocking" -eq 1 ]]; then
+            echo "An experimental patch this build applies failed its audit."
             exit 1
           fi
-          echo "All experimental patches still apply to v$VERSION."
+          echo "No blocking drift for RocksDB v$VERSION."
 
   build:
     name: Build
-    needs: [check]
+    needs: [check, audit]
     if: ${{ needs.check.outputs.should_build == 'true' }}
     strategy:
       fail-fast: false
@@ -459,26 +467,9 @@ jobs:
 
           ROCKSDB_SRC="${GITHUB_WORKSPACE}/rocksdb-${{ needs.check.outputs.version }}"
 
-          # -F0 (zero fuzz): a patch whose context has drifted in a new RocksDB
-          # version fails loudly instead of fuzzy-matching a hunk into the wrong site.
-          for patch in "${GITHUB_WORKSPACE}/vcpkg-overlays/rocksdb/patches"/*.patch; do
-            if [ -f "$patch" ]; then
-              echo "Applying patch: $patch"
-              patch -p1 -F0 -d "$ROCKSDB_SRC" < "$patch"
-            fi
-          done
-
-          # Experimental patches, resolved and ordered by the check job. Applied
-          # after the official patches; empty unless the build requested them.
-          for dir in $EXPERIMENTAL_DIRS; do
-            # Within a directory, apply in LC_ALL=C order so every runner agrees; a bare
-            # glob follows the runner's locale. Zero-pad names if one must precede another.
-            while IFS= read -r patch; do
-              [ -f "$patch" ] || continue
-              echo "Applying experimental patch: $patch"
-              patch -p1 -F0 -d "$ROCKSDB_SRC" < "$patch"
-            done < <(printf '%s\n' "${GITHUB_WORKSPACE}/experimental-patches/$dir"/*.patch | LC_ALL=C sort)
-          done
+          # Official patches, then any requested experimental ones. Shared with the
+          # PR gate and the nightly audit so they prove the stack this actually ships.
+          .github/scripts/apply-patches.sh "$ROCKSDB_SRC" ${EXPERIMENTAL_DIRS}
 
       - name: Build RocksDB (macos/linux glibc/windows)
         if: ${{ matrix.platform.target != 'linux-x64-musl' && matrix.platform.target != 'linux-arm64-musl' }}

@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Expensive verification hook: PR gate only. Builds and runs the upstream tests
-# that cover blob_dir. Receives the already-patched RocksDB source tree.
+# Expensive hook (see ../README.md): builds and runs the upstream tests covering blob_dir.
 set -euo pipefail
 
 if [[ $# -ne 1 ]]; then
