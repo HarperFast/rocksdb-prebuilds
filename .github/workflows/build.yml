@@ -10,7 +10,7 @@ on:
         required: false
         type: string
       prerelease_revision:
-        description: Prerelease revision for publishing a prerelease build of a RocksDB version. A single semver prerelease identifier - letters, digits, and hyphens only, no dots, no leading zero on a purely numeric value, and not starting with `experimental` (e.g. `1` for v11.1.2-1 or `rc2` for v11.1.2-rc2)
+        description: Prerelease revision for publishing a prerelease build of a RocksDB version. A single semver prerelease identifier - lowercase letters, digits, and hyphens only, no dots, no leading zero on a purely numeric value, and not starting with `experimental` (e.g. `1` for v11.1.2-1 or `rc2` for v11.1.2-rc2)
         required: false
         type: string
       experimental_patches:
@@ -222,8 +222,8 @@ jobs:
             # revision to an id list with a dot, so a dotted revision would blur that
             # boundary. No leading zero when purely numeric, per
             # https://semver.org/#spec-item-9.
-            if [[ ! "$REVISION" =~ ^[0-9A-Za-z-]+$ || ! "$REVISION" =~ [0-9A-Za-z] ]]; then
-              echo "prerelease_revision must be letters, digits, and hyphens, with no dots and at least one letter or digit (got '$REVISION')" >&2
+            if [[ ! "$REVISION" =~ ^[0-9a-z-]+$ || ! "$REVISION" =~ [0-9a-z] ]]; then
+              echo "prerelease_revision must be lowercase letters, digits, and hyphens, with no dots and at least one letter or digit (got '$REVISION')" >&2
               exit 1
             fi
             if [[ "$REVISION" =~ ^[0-9]+$ && "$REVISION" =~ ^0[0-9] ]]; then
