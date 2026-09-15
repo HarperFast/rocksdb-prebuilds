@@ -1,0 +1,1243 @@
+Subject: [PATCH] Add AdvancedColumnFamilyOptions::blob_dir
+
+Lets blob files be placed on a different volume than the SST files.
+
+Stock RocksDB derives every blob file path from `cf_paths.front().path`, so
+blob files always sit alongside the SST files of the first configured path.
+`db_paths`/`cf_paths` therefore cannot tier large values: they distribute SST
+files by level while every blob file stays put. This adds a per-column-family
+`blob_dir` (empty = the historical `cf_paths.front()` behavior) and routes all
+blob path derivation through a single `ImmutableCFOptions::GetBlobDir()`
+accessor.
+
+Sites updated: blob file creation and reads; directory fsync after ordinary,
+atomic, and direct-write flushes, compaction, and WAL recovery (a blob
+directory outside cf_paths has no handle in `Directories`, so its entries were
+never synced — ColumnFamilyData now owns one); the
+obsolete-blob-file path recorded for deletion; the CollectAllDBPaths scan; the
+directory created at DB open; both DestroyDB overloads; Env path registration
+via GetDbPaths; GetLiveFilesStorageInfo (checkpoint/backup); the column-family
+metadata path; full-file checksum verification; the flush/compaction listener
+info; and the direct-write blob partition manager, which otherwise writes to
+`dbname_` regardless (only overridden when blob_dir is explicitly set, so the
+default path is unchanged). Checkpoint/BackupEngine grow a guard rather than a
+new path (below).
+
+Checkpoint and BackupEngine refuse a DB with blob_dir set. They already refuse
+one whose files span more than one directory (`CreateCustomCheckpoint` checks
+`dirs.size() > 1`), and reporting the real blob directory from
+GetLiveFilesStorageInfo puts a tiered DB in that category — but only once a
+blob file exists to report. Backing one up in the window before that is worse
+than flattening: the copied OPTIONS file carries blob_dir, so restoring
+elsewhere and opening yields a second DB pointed at the source's blob
+directory, whose obsolete-file scan deletes the source's live blob files. So
+CreateCustomCheckpoint requests a portable capture through the virtual
+GetLiveFilesStorageInfo API. DBImpl tracks blob_dir configuration under its DB
+mutex, never clears the flag after a column-family drop, and refuses before
+flushing or enumerating files. This keeps the check atomic with the captured
+OPTIONS state and works for StackableDB/custom DB implementations without an
+unsafe DBImpl downcast. The legacy GetLiveFiles API also refuses because it
+cannot report per-file directories. The file-spanning error now names blob_dir
+alongside db_paths and cf_paths.
+
+Because a blob file's directory is derived from the option rather than recorded
+per file (unlike an SST's MANIFEST path index), the option is immutable and
+changing it on a populated DB strands the existing blob files. RocksDB cannot
+enforce that without persisting more state, so the constraint is documented
+here and enforced by the consumer: @harperfast/rocksdb-js compares the request
+against the blob_dir persisted in the OPTIONS file and refuses a mismatching
+open. `blob_dir` is deliberately the LAST field of AdvancedColumnFamilyOptions
+to limit layout churn within that struct. Adding it still changes the layout of
+AdvancedColumnFamilyOptions and its derived option types: every C++ consumer
+must rebuild against the patched headers, and binaries compiled against stock
+RocksDB headers are not ABI-compatible with this build.
+
+`ROCKSDB_HAS_CF_BLOB_DIR` is defined in advanced_options.h so downstream code
+can feature-detect and still compile against an unpatched RocksDB. Version 2
+includes the atomic portable-capture guard and complete flush-directory fsync.
+
+Rebase note: authored against v11.8.1 (the version pinned by rocksdb-js).
+Re-check the blob path sites on every version bump — 11.8.1 added the
+direct-write partition manager, which was a new one.
+
+Downstream-only (HarperFast). Not submitted upstream.
+diff --git a/db/blob/blob_file_builder.cc b/db/blob/blob_file_builder.cc
+index 6c158b6..270cc20 100644
+--- a/db/blob/blob_file_builder.cc
++++ b/db/blob/blob_file_builder.cc
+@@ -189,7 +189,7 @@ Status BlobFileBuilder::OpenBlobFileIfNeeded() {
+   assert(immutable_options_);
+   assert(!immutable_options_->cf_paths.empty());
+   std::string blob_file_path =
+-      BlobFileName(immutable_options_->cf_paths.front().path, blob_file_number);
++      BlobFileName(immutable_options_->GetBlobDir(), blob_file_number);
+
+   if (blob_callback_) {
+     blob_callback_->OnBlobFileCreationStarted(
+diff --git a/db/blob/blob_file_reader.cc b/db/blob/blob_file_reader.cc
+index d8d39a2..6e6d8b8 100644
+--- a/db/blob/blob_file_reader.cc
++++ b/db/blob/blob_file_reader.cc
+@@ -96,11 +96,10 @@ Status BlobFileReader::OpenFile(
+   assert(file_size);
+   assert(file_reader);
+
+-  const auto& cf_paths = immutable_options.cf_paths;
+-  assert(!cf_paths.empty());
++  assert(!immutable_options.cf_paths.empty());
+
+   const std::string blob_file_path =
+-      BlobFileName(cf_paths.front().path, blob_file_number);
++      BlobFileName(immutable_options.GetBlobDir(), blob_file_number);
+
+   FileSystem* const fs = immutable_options.fs.get();
+   assert(fs);
+diff --git a/db/column_family.cc b/db/column_family.cc
+index a0cb190..48f4f56 100644
+--- a/db/column_family.cc
++++ b/db/column_family.cc
+@@ -599,6 +599,13 @@ std::vector<std::string> ColumnFamilyData::GetDbPaths() const {
+   for (const DbPath& db_path : ioptions_.cf_paths) {
+     paths.emplace_back(db_path.path);
+   }
++  // Raw field rather than GetBlobDir(): an unset blob_dir resolves to
++  // cf_paths.front(), already covered above, and callers may hold options whose
++  // cf_paths was never populated. Register and Unregister both read this.
++  if (!ioptions_.blob_dir.empty() &&
++      std::find(paths.begin(), paths.end(), ioptions_.blob_dir) == paths.end()) {
++    paths.emplace_back(ioptions_.blob_dir);
++  }
+   return paths;
+ }
+
+@@ -1749,9 +1756,31 @@ Status ColumnFamilyData::AddDirectories(
+     }
+   }
+   assert(data_dirs_.size() == ioptions_.cf_paths.size());
++
++  // data_dirs_ never covers a blob_dir outside cf_paths. Always populated so
++  // callers need no fallback; aliases cf_paths.front()'s handle when unset.
++  if (!data_dirs_.empty()) {
++    const std::string& blob_dir = ioptions_.GetBlobDir();
++    auto existing_dir = created_dirs->find(blob_dir);
++    if (existing_dir == created_dirs->end()) {
++      std::unique_ptr<FSDirectory> blob_directory;
++      s = DBImpl::CreateAndNewDirectory(ioptions_.fs.get(), blob_dir,
++                                        &blob_directory);
++      if (!s.ok()) {
++        return s;
++      }
++      assert(blob_directory != nullptr);
++      blob_dir_ = std::move(blob_directory);
++      (*created_dirs)[blob_dir] = blob_dir_;
++    } else {
++      blob_dir_ = existing_dir->second;
++    }
++  }
+   return s;
+ }
+
++FSDirectory* ColumnFamilyData::GetBlobDir() const { return blob_dir_.get(); }
++
+ FSDirectory* ColumnFamilyData::GetDataDir(size_t path_id) const {
+   if (data_dirs_.empty()) {
+     return nullptr;
+diff --git a/db/column_family.h b/db/column_family.h
+index f3b736d..ef04a61 100644
+--- a/db/column_family.h
++++ b/db/column_family.h
+@@ -547,6 +547,9 @@ class ColumnFamilyData {
+
+   FSDirectory* GetDataDir(size_t path_id) const;
+
++  // Aliases the cf_paths handle unless blob_dir moves blob files elsewhere.
++  FSDirectory* GetBlobDir() const;
++
+   // full_history_ts_low_ can only increase.
+   void SetFullHistoryTsLow(std::string ts_low) {
+     assert(!ts_low.empty());
+@@ -726,6 +729,8 @@ class ColumnFamilyData {
+   // Directories corresponding to cf_paths.
+   std::vector<std::shared_ptr<FSDirectory>> data_dirs_;
+
++  std::shared_ptr<FSDirectory> blob_dir_;
++
+   bool db_paths_registered_;
+
+   std::string full_history_ts_low_;
+diff --git a/db/db_basic_test.cc b/db/db_basic_test.cc
+index 52a6ac9..4b0c54f 100644
+--- a/db/db_basic_test.cc
++++ b/db/db_basic_test.cc
+@@ -21,6 +21,7 @@
+ #include "rocksdb/perf_context.h"
+ #include "rocksdb/table.h"
+ #include "rocksdb/utilities/debug.h"
++#include "rocksdb/utilities/options_util.h"
+ #include "table/block_based/block_based_table_reader.h"
+ #include "table/block_based/block_builder.h"
+ #include "test_util/sync_point.h"
+@@ -876,6 +877,58 @@ TEST_F(DBBasicTest, RecoverySstDirSyncedBeforeFreshManifestPublish) {
+   Close();
+ }
+
++// WAL recovery can create both an SST and a blob file. A failed open after
++// publishing the recovery MANIFEST must not leave that MANIFEST referring to a
++// blob file whose directory entry was never synced.
++TEST_F(DBBasicTest, RecoveryBlobDirSyncedBeforeFreshManifestPublish) {
++  auto fault_fs = std::make_shared<FaultInjectionTestFS>(env_->GetFileSystem());
++  std::unique_ptr<Env> fault_env(NewCompositeEnv(fault_fs));
++
++  Options options = CurrentOptions();
++  options.create_if_missing = true;
++  options.disable_auto_compactions = true;
++  options.env = fault_env.get();
++  options.reuse_manifest_on_open = false;
++  options.enable_blob_files = true;
++  options.min_blob_size = 0;
++  options.blob_dir = dbname_ + "_blobs";
++
++  DestroyAndReopen(options);
++  ASSERT_OK(Put("base", std::string(1024, 'b')));
++  ASSERT_OK(Flush());
++
++  ASSERT_OK(Put("recovered", std::string(1024, 'r')));
++  ASSERT_OK(db_->FlushWAL(true));
++  Close();
++
++  fault_fs->ResetState();
++
++  std::atomic<bool> fail_after_current_publish{true};
++  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->SetCallBack(
++      "VersionSet::ProcessManifestWrites:AfterSetCurrentFile", [&](void* arg) {
++        if (fail_after_current_publish.exchange(false)) {
++          ASSERT_NE(nullptr, arg);
++          IOStatus* io_s = static_cast<IOStatus*>(arg);
++          ASSERT_OK(*io_s);
++          *io_s = IOStatus::IOError("injected current publish aftermath");
++        }
++      });
++  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->EnableProcessing();
++
++  Status s = TryReopen(options);
++  ASSERT_TRUE(s.IsIOError()) << s.ToString();
++
++  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->DisableProcessing();
++  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->ClearAllCallBacks();
++
++  ASSERT_OK(fault_fs->DeleteFilesCreatedAfterLastDirSync(IOOptions(), nullptr));
++
++  ASSERT_OK(TryReopen(options));
++  ASSERT_EQ(std::string(1024, 'b'), Get("base"));
++  ASSERT_EQ(std::string(1024, 'r'), Get("recovered"));
++  Close();
++}
++
+ // Regression test for WAL recovery while appending to a reused MANIFEST. The
+ // first reopen forces recovery to create an SST and then fail after MANIFEST
+ // sync. The simulated crash cleanup deletes files without a prior directory
+@@ -1445,6 +1498,126 @@ TEST_F(DBBasicTest, CompactedDB) {
+             "Not implemented: Not supported operation in read only mode.");
+ }
+
++TEST_F(DBBasicTest, PortableLiveFileCaptureRejectsBlobDirBeforeFlush) {
++  Options options = CurrentOptions();
++  options.create_if_missing = true;
++  options.enable_blob_files = true;
++  options.min_blob_size = 0;
++  options.blob_dir = dbname_ + "_blobs";
++  DestroyAndReopen(options);
++
++  ASSERT_OK(Put("key", std::string(1024, 'v')));
++  ASSERT_EQ(0, NumTableFilesAtLevel(0));
++
++  LiveFilesStorageInfoOptions portable_opts;
++  portable_opts.require_portable_files = true;
++  std::vector<LiveFileStorageInfo> files;
++  Status s = db_->GetLiveFilesStorageInfo(portable_opts, &files);
++  ASSERT_TRUE(s.IsNotSupported());
++  ASSERT_EQ(0, NumTableFilesAtLevel(0));
++
++  LiveFilesStorageInfoOptions storage_opts;
++  storage_opts.wal_size_for_flush = std::numeric_limits<uint64_t>::max();
++  ASSERT_OK(db_->GetLiveFilesStorageInfo(storage_opts, &files));
++
++  std::vector<std::string> legacy_files;
++  uint64_t manifest_size = 0;
++  s = db_->GetLiveFiles(legacy_files, &manifest_size, /*flush_memtable=*/false);
++  ASSERT_TRUE(s.IsNotSupported());
++
++  ASSERT_OK(Flush());
++  ASSERT_EQ(std::string(1024, 'v'), Get("key"));
++  std::vector<std::string> blob_children;
++  ASSERT_OK(options.env->GetChildren(options.blob_dir, &blob_children));
++  ASSERT_TRUE(std::any_of(blob_children.begin(), blob_children.end(),
++                          [](const std::string& child) {
++                            uint64_t number = 0;
++                            FileType type = kWalFile;
++                            return ParseFileName(child, &number, &type) &&
++                                   type == kBlobFile;
++                          }));
++
++  ConfigOptions config_options;
++  config_options.env = options.env;
++  DBOptions loaded_db_options;
++  std::vector<ColumnFamilyDescriptor> loaded_column_families;
++  ASSERT_OK(LoadLatestOptions(config_options, dbname_, &loaded_db_options,
++                              &loaded_column_families));
++  ASSERT_EQ(1, loaded_column_families.size());
++  ASSERT_EQ(options.blob_dir, loaded_column_families[0].options.blob_dir);
++
++  Close();
++  ASSERT_OK(ReadOnlyReopen(options));
++  ASSERT_EQ(std::string(1024, 'v'), Get("key"));
++  s = db_->GetLiveFilesStorageInfo(portable_opts, &files);
++  ASSERT_TRUE(s.IsNotSupported());
++  Close();
++  ASSERT_OK(DestroyDB(dbname_, options));
++  ASSERT_TRUE(options.env->FileExists(options.blob_dir).IsNotFound());
++}
++
++TEST_F(DBBasicTest, PortableLiveFileCaptureRemainsBlockedAfterBlobDirCFDrop) {
++  Options options = CurrentOptions();
++  options.create_if_missing = true;
++  DestroyAndReopen(options);
++
++  ColumnFamilyOptions cf_options(options);
++  cf_options.blob_dir = dbname_ + "/dropped-cf-blobs";
++  ColumnFamilyHandle* handle = nullptr;
++  ASSERT_OK(db_->CreateColumnFamily(cf_options, "blob-cf", &handle));
++  ASSERT_OK(db_->DropColumnFamily(handle));
++  delete handle;
++
++  ASSERT_OK(Put("key", "value"));
++  LiveFilesStorageInfoOptions portable_opts;
++  portable_opts.require_portable_files = true;
++  std::vector<LiveFileStorageInfo> files;
++  Status s = db_->GetLiveFilesStorageInfo(portable_opts, &files);
++  ASSERT_TRUE(s.IsNotSupported());
++  ASSERT_EQ(0, NumTableFilesAtLevel(0));
++
++  Close();
++  ASSERT_OK(DestroyDB(dbname_, options));
++}
++
++TEST_F(DBBasicTest, PortableLiveFileCaptureRechecksAfterFlush) {
++  Options options = CurrentOptions();
++  options.create_if_missing = true;
++  DestroyAndReopen(options);
++  ASSERT_OK(Put("key", "value"));
++
++  ColumnFamilyHandle* blob_handle = nullptr;
++  bool created_blob_cf = false;
++  SyncPoint::GetInstance()->SetCallBack(
++      "DBImpl::FlushAllColumnFamilies:1", [&](void*) {
++        if (created_blob_cf) {
++          return;
++        }
++        created_blob_cf = true;
++        ColumnFamilyOptions cf_options(options);
++        cf_options.blob_dir = dbname_ + "/concurrent-cf-blobs";
++        ASSERT_OK(
++            db_->CreateColumnFamily(cf_options, "blob-cf", &blob_handle));
++      });
++  SyncPoint::GetInstance()->EnableProcessing();
++
++  LiveFilesStorageInfoOptions portable_opts;
++  portable_opts.require_portable_files = true;
++  std::vector<LiveFileStorageInfo> files;
++  Status s = db_->GetLiveFilesStorageInfo(portable_opts, &files);
++
++  SyncPoint::GetInstance()->DisableProcessing();
++  SyncPoint::GetInstance()->ClearAllCallBacks();
++  ASSERT_TRUE(created_blob_cf);
++  ASSERT_NE(nullptr, blob_handle);
++  ASSERT_TRUE(s.IsNotSupported());
++  ASSERT_OK(db_->DropColumnFamily(blob_handle));
++  delete blob_handle;
++
++  Close();
++  ASSERT_OK(DestroyDB(dbname_, options));
++}
++
+ TEST_F(DBBasicTest, LevelLimitReopen) {
+   Options options = CurrentOptions();
+   CreateAndReopenWithCF({"pikachu"}, options);
+diff --git a/db/db_filesnapshot.cc b/db/db_filesnapshot.cc
+index 4be1d37..46c9a39 100644
+--- a/db/db_filesnapshot.cc
++++ b/db/db_filesnapshot.cc
+@@ -40,6 +40,13 @@ Status DBImpl::GetLiveFiles(std::vector<std::string>& ret,
+
+   mutex_.Lock();
+
++  if (HasBlobDirConfiguredWithLockHeld()) {
++    mutex_.Unlock();
++    return Status::NotSupported(
++        "GetLiveFiles cannot represent blob_dir; use "
++        "GetLiveFilesStorageInfo instead");
++  }
++
+   if (flush_memtable) {
+     Status status = FlushForGetLiveFiles();
+     if (!status.ok()) {
+@@ -50,6 +57,15 @@ Status DBImpl::GetLiveFiles(std::vector<std::string>& ret,
+     }
+   }
+
++  // FlushForGetLiveFiles() temporarily releases mutex_, so a column family
++  // with blob_dir can be created after the first check.
++  if (HasBlobDirConfiguredWithLockHeld()) {
++    mutex_.Unlock();
++    return Status::NotSupported(
++        "GetLiveFiles cannot represent blob_dir; use "
++        "GetLiveFilesStorageInfo instead");
++  }
++
+   // Make a set of all of the live table and blob files
+   std::vector<uint64_t> live_table_files;
+   std::vector<uint64_t> live_blob_files;
+@@ -242,6 +258,11 @@ Status DBImpl::GetLiveFilesStorageInfo(
+   // This is a modified version of GetLiveFiles, to get access to more
+   // metadata.
+   mutex_.Lock();
++  if (opts.require_portable_files && HasBlobDirConfiguredWithLockHeld()) {
++    mutex_.Unlock();
++    return Status::NotSupported(
++        "Portable live-file capture does not support blob_dir");
++  }
+   bool wal_locked = false;
+   const bool needs_blob_direct_write_flush =
+       HasInFlightBlobDirectWriteFilesWithLockHeld();
+@@ -277,6 +298,14 @@ Status DBImpl::GetLiveFilesStorageInfo(
+     }
+   }
+
++  // FlushForGetLiveFiles() temporarily releases mutex_, so repeat the
++  // portability check before choosing live files and the OPTIONS file.
++  if (opts.require_portable_files && HasBlobDirConfiguredWithLockHeld()) {
++    mutex_.Unlock();
++    return Status::NotSupported(
++        "Portable live-file capture does not support blob_dir");
++  }
++
+   // Make a set of all of the live table and blob files
+   for (auto cfd : *versions_->GetColumnFamilySet()) {
+     if (cfd->IsDropped()) {
+@@ -327,7 +356,7 @@ Status DBImpl::GetLiveFilesStorageInfo(
+       LiveFileStorageInfo& info = results.back();
+
+       info.relative_filename = BlobFileName(meta->GetBlobFileNumber());
+-      info.directory = GetDir(/* path_id */ 0);
++      info.directory = cfd->ioptions().GetBlobDir();
+       info.file_number = meta->GetBlobFileNumber();
+       info.file_type = kBlobFile;
+       info.size = meta->GetBlobFileSize();
+diff --git a/db/db_flush_test.cc b/db/db_flush_test.cc
+index 83f823d..3d058ac 100644
+--- a/db/db_flush_test.cc
++++ b/db/db_flush_test.cc
+@@ -29,6 +29,75 @@
+
+ namespace ROCKSDB_NAMESPACE {
+
++class BlobDirFsyncTrackingFileSystem : public FileSystemWrapper {
++ public:
++  BlobDirFsyncTrackingFileSystem(std::shared_ptr<FileSystem> target,
++                                 std::string blob_dir)
++      : FileSystemWrapper(std::move(target)), blob_dir_(std::move(blob_dir)) {}
++
++  const char* Name() const override {
++    return "BlobDirFsyncTrackingFileSystem";
++  }
++
++  IOStatus NewDirectory(const std::string& name, const IOOptions& options,
++                        std::unique_ptr<FSDirectory>* result,
++                        IODebugContext* dbg) override {
++    IOStatus s = FileSystemWrapper::NewDirectory(name, options, result, dbg);
++    if (s.ok()) {
++      const bool is_blob_dir =
++          NormalizePath(name) == NormalizePath(blob_dir_);
++      if (is_blob_dir) {
++        blob_directory_opens_.fetch_add(1, std::memory_order_acq_rel);
++      }
++      *result = std::make_unique<TrackingDirectory>(
++          std::move(*result), this, is_blob_dir);
++    }
++    return s;
++  }
++
++  void Reset() {
++    blob_dir_fsyncs_.store(0, std::memory_order_release);
++    blob_directory_opens_.store(0, std::memory_order_release);
++  }
++
++  int BlobDirFsyncs() const {
++    return blob_dir_fsyncs_.load(std::memory_order_acquire);
++  }
++
++  int BlobDirectoryOpens() const {
++    return blob_directory_opens_.load(std::memory_order_acquire);
++  }
++
++ private:
++  class TrackingDirectory : public FSDirectoryWrapper {
++   public:
++    TrackingDirectory(std::unique_ptr<FSDirectory>&& target,
++                      BlobDirFsyncTrackingFileSystem* fs, bool is_blob_dir)
++        : FSDirectoryWrapper(std::move(target)),
++          fs_(fs),
++          is_blob_dir_(is_blob_dir) {}
++
++    IOStatus FsyncWithDirOptions(
++        const IOOptions& options, IODebugContext* dbg,
++        const DirFsyncOptions& dir_options) override {
++      IOStatus s = FSDirectoryWrapper::FsyncWithDirOptions(options, dbg,
++                                                           dir_options);
++      if (s.ok() && is_blob_dir_) {
++        fs_->blob_dir_fsyncs_.fetch_add(1, std::memory_order_acq_rel);
++      }
++      return s;
++    }
++
++   private:
++    BlobDirFsyncTrackingFileSystem* fs_;
++    bool is_blob_dir_;
++  };
++
++  const std::string blob_dir_;
++  std::atomic<int> blob_dir_fsyncs_{0};
++  std::atomic<int> blob_directory_opens_{0};
++};
++
+ // This is a static filter used for filtering
+ // kvs during the compaction process.
+ static std::string NEW_VALUE = "NewValue";
+@@ -61,6 +130,51 @@ class DBAtomicFlushTest : public DBFlushTest,
+   DBAtomicFlushTest() : DBFlushTest() {}
+ };
+
++TEST_F(DBFlushTest, BlobDirIsFsyncedForOrdinaryAndAtomicFlush) {
++  const std::string blob_dir = dbname_ + "_blobs";
++  auto tracking_fs = std::make_shared<BlobDirFsyncTrackingFileSystem>(
++      FileSystem::Default(), blob_dir);
++  std::unique_ptr<Env> tracking_env(NewCompositeEnv(tracking_fs));
++
++  for (bool atomic_flush : {false, true}) {
++    for (bool direct_write : {false, true}) {
++      SCOPED_TRACE(atomic_flush ? "atomic flush" : "ordinary flush");
++      SCOPED_TRACE(direct_write ? "direct blob write" : "flush blob write");
++      Options options = CurrentOptions();
++      options.env = tracking_env.get();
++      options.create_if_missing = true;
++      options.atomic_flush = atomic_flush;
++      options.enable_blob_files = true;
++      options.enable_blob_direct_write = direct_write;
++      options.allow_concurrent_memtable_write = false;
++      options.blob_direct_write_partitions = 1;
++      options.min_blob_size = 0;
++      options.blob_dir = blob_dir;
++
++      DestroyAndReopen(options);
++      CreateAndReopenWithCF({"cf1"}, options);
++      EXPECT_GT(tracking_fs->BlobDirectoryOpens(), 0);
++      tracking_fs->Reset();
++
++      ASSERT_OK(Put(0, "default-key", std::string(1024, 'd')));
++      ASSERT_OK(Put(1, "cf-key", std::string(1024, 'c')));
++      ASSERT_OK(Flush({0, 1}));
++      EXPECT_GT(tracking_fs->BlobDirFsyncs(), 0);
++      ASSERT_EQ(std::string(1024, 'd'), Get(0, "default-key"));
++      ASSERT_EQ(std::string(1024, 'c'), Get(1, "cf-key"));
++
++      Close();
++      ReopenWithColumnFamilies({"default", "cf1"}, options);
++      ASSERT_EQ(std::string(1024, 'd'), Get(0, "default-key"));
++      ASSERT_EQ(std::string(1024, 'c'), Get(1, "cf-key"));
++      Close();
++      ASSERT_OK(DestroyDB(dbname_, options));
++    }
++  }
++
++  Reopen(CurrentOptions());
++}
++
+ // We had issue when two background threads trying to flush at the same time,
+ // only one of them get committed. The test verifies the issue is fixed.
+ TEST_F(DBFlushTest, FlushWhileWritingManifest) {
+diff --git a/db/db_impl/db_impl.cc b/db/db_impl/db_impl.cc
+index ca93353..b27f40a 100644
+--- a/db/db_impl/db_impl.cc
++++ b/db/db_impl/db_impl.cc
+@@ -622,6 +622,19 @@ bool DBImpl::HasAnyBlobDirectWriteColumnFamilyWithLockHeld() {
+   return blob_direct_write_cf_count_.load(std::memory_order_relaxed) > 0;
+ }
+
++bool DBImpl::HasBlobDirConfiguredWithLockHeld() {
++  mutex_.AssertHeld();
++  if (!has_ever_had_blob_dir_) {
++    for (auto* cfd : *versions_->GetColumnFamilySet()) {
++      if (!cfd->ioptions().blob_dir.empty()) {
++        has_ever_had_blob_dir_ = true;
++        break;
++      }
++    }
++  }
++  return has_ever_had_blob_dir_;
++}
++
+ bool DBImpl::HasInFlightBlobDirectWriteFilesWithLockHeld() {
+   mutex_.AssertHeld();
+   if (!HasAnyBlobDirectWriteColumnFamilyWithLockHeld()) {
+@@ -652,6 +665,11 @@ void DBImpl::MaybeInitBlobDirectWriteColumnFamily(
+     ColumnFamilyData* cfd, const ColumnFamilyOptions& cf_options,
+     const std::string& column_family_name) {
+   assert(cfd != nullptr);
++  mutex_.AssertHeld();
++
++  if (!cfd->ioptions().blob_dir.empty()) {
++    has_ever_had_blob_dir_ = true;
++  }
+
+   if (!cf_options.enable_blob_files || !cf_options.enable_blob_direct_write) {
+     return;
+@@ -668,7 +686,11 @@ void DBImpl::MaybeInitBlobDirectWriteColumnFamily(
+       cf_options.blob_direct_write_partitions,
+       cf_options.blob_direct_write_partition_strategy,
+       [vs = versions_.get()]() { return vs->NewFileNumber(); }, fs_.get(),
+-      immutable_db_options_.clock, stats_, file_options_, dbname_,
++      immutable_db_options_.clock, stats_, file_options_,
++      // Direct-write blob files otherwise go to dbname_ regardless of where the
++      // rest of this CF's blob files live; only override when blob_dir is
++      // explicitly set, so the default path keeps its existing behavior.
++      cfd->ioptions().blob_dir.empty() ? dbname_ : cfd->ioptions().blob_dir,
+       column_family_name, cf_options.blob_file_size,
+       immutable_db_options_.use_fsync, cfd->blob_file_cache(), &blob_callback_,
+       immutable_db_options_.listeners,
+@@ -1592,6 +1614,15 @@ FSDirectory* DBImpl::GetDataDir(ColumnFamilyData* cfd, size_t path_id) const {
+   return ret_dir;
+ }
+
++FSDirectory* DBImpl::GetBlobDir(ColumnFamilyData* cfd) const {
++  assert(cfd);
++  FSDirectory* ret_dir = cfd->GetBlobDir();
++  if (ret_dir == nullptr) {
++    return GetDataDir(cfd, 0);
++  }
++  return ret_dir;
++}
++
+ Status DBImpl::SetOptions(
+     const std::unordered_map<ColumnFamilyHandle*,
+                              std::unordered_map<std::string, std::string>>&
+@@ -5654,10 +5685,19 @@ Status DestroyDB(const std::string& dbname, const Options& options,
+     for (const DbPath& db_path : options.db_paths) {
+       paths.insert(db_path.path);
+     }
++    // `options` carries the column-family options for the common two-argument
++    // DestroyDB, where `column_families` is empty; without this a blob_dir set
++    // that way is never scanned and its blob files are left behind.
++    if (!options.blob_dir.empty()) {
++      paths.insert(options.blob_dir);
++    }
+     for (const ColumnFamilyDescriptor& cf : column_families) {
+       for (const DbPath& cf_path : cf.options.cf_paths) {
+         paths.insert(cf_path.path);
+       }
++      if (!cf.options.blob_dir.empty()) {
++        paths.insert(cf.options.blob_dir);
++      }
+     }
+
+     for (const auto& path : paths) {
+@@ -7100,8 +7140,8 @@ Status DBImpl::VerifyChecksumInternal(const ReadOptions& read_options,
+
+         const uint64_t blob_file_number = meta->GetBlobFileNumber();
+
+-        const std::string blob_file_name = BlobFileName(
+-            cfd->ioptions().cf_paths.front().path, blob_file_number);
++        const std::string blob_file_name =
++            BlobFileName(cfd->ioptions().GetBlobDir(), blob_file_number);
+         s = VerifyFullFileChecksum(meta->GetChecksumValue(),
+                                    meta->GetChecksumMethod(), blob_file_name,
+                                    read_options);
+diff --git a/db/db_impl/db_impl.h b/db/db_impl/db_impl.h
+index cd58be3..d1ee8ab 100644
+--- a/db/db_impl/db_impl.h
++++ b/db/db_impl/db_impl.h
+@@ -1978,6 +1978,9 @@ class DBImpl : public DB {
+
+   // Same as HasAnyBlobDirectWriteColumnFamily(), but requires `mutex_` held.
+   bool HasAnyBlobDirectWriteColumnFamilyWithLockHeld();
++  // Discovers blob_dir on open modes that do not run write-path
++  // initialization and permanently latches it. Requires `mutex_` held.
++  bool HasBlobDirConfiguredWithLockHeld();
+   // Returns true if any BDW column family still owns blob files that have not
+   // yet been made visible through MANIFEST. Requires `mutex_` held.
+   bool HasInFlightBlobDirectWriteFilesWithLockHeld();
+@@ -2837,6 +2840,8 @@ class DBImpl : public DB {
+
+   FSDirectory* GetDataDir(ColumnFamilyData* cfd, size_t path_id) const;
+
++  FSDirectory* GetBlobDir(ColumnFamilyData* cfd) const;
++
+   Status MaybeReleaseTimestampedSnapshotsAndCheck();
+
+   Status MaybeWriteWalMarkersToManifestOnClose();
+@@ -3527,6 +3532,11 @@ class DBImpl : public DB {
+   // completely disabled for the DB.
+   std::atomic<uint32_t> blob_direct_write_cf_count_{0};
+
++  // Set under mutex_ when any column family is opened with blob_dir configured
++  // and never cleared. A dropped CF can still be visible to an in-progress
++  // file capture, so the portability check must remain conservative.
++  bool has_ever_had_blob_dir_ = false;
++
+   // if an attempt was made to flush all column families that
+   // the oldest log depends on but uncommitted data in the oldest
+   // log prevents the log from being released.
+diff --git a/db/db_impl/db_impl_compaction_flush.cc b/db/db_impl/db_impl_compaction_flush.cc
+index c8ce290..b29675c 100644
+--- a/db/db_impl/db_impl_compaction_flush.cc
++++ b/db/db_impl/db_impl_compaction_flush.cc
+@@ -566,6 +566,14 @@ Status DBImpl::AtomicFlushMemTablesToOutputFiles(
+   InitSnapshotContext(job_context);
+   autovector<FSDirectory*> distinct_output_dirs;
+   autovector<std::string> distinct_output_dir_paths;
++  auto add_output_directory = [&](const std::string& path, FSDirectory* dir) {
++    if (std::find(distinct_output_dir_paths.begin(),
++                  distinct_output_dir_paths.end(),
++                  path) == distinct_output_dir_paths.end()) {
++      distinct_output_dir_paths.emplace_back(path);
++      distinct_output_dirs.emplace_back(dir);
++    }
++  };
+   std::vector<std::unique_ptr<FlushJob>> jobs;
+   std::vector<MutableCFOptions> all_mutable_cf_options;
+   int num_cfs = static_cast<int>(cfds.size());
+@@ -575,20 +583,7 @@ Status DBImpl::AtomicFlushMemTablesToOutputFiles(
+     FSDirectory* data_dir = GetDataDir(cfd, 0U);
+     const std::string& curr_path = cfd->ioptions().cf_paths[0].path;
+
+-    // Add to distinct output directories if eligible. Use linear search. Since
+-    // the number of elements in the vector is not large, performance should be
+-    // tolerable.
+-    bool found = false;
+-    for (const auto& path : distinct_output_dir_paths) {
+-      if (path == curr_path) {
+-        found = true;
+-        break;
+-      }
+-    }
+-    if (!found) {
+-      distinct_output_dir_paths.emplace_back(curr_path);
+-      distinct_output_dirs.emplace_back(data_dir);
+-    }
++    add_output_directory(curr_path, data_dir);
+
+     all_mutable_cf_options.emplace_back(cfd->GetLatestMutableCFOptions());
+     const MutableCFOptions& mutable_cf_options = all_mutable_cf_options.back();
+@@ -769,6 +764,12 @@ Status DBImpl::AtomicFlushMemTablesToOutputFiles(
+   }
+
+   if (s.ok() || s.IsShutdownInProgress()) {
++    for (int i = 0; i != num_cfs; ++i) {
++      if (jobs[i]->HasBlobFileAdditions()) {
++        add_output_directory(cfds[i]->ioptions().GetBlobDir(),
++                             GetBlobDir(cfds[i]));
++      }
++    }
+     // Sync on all distinct output directories.
+     for (auto dir : distinct_output_dirs) {
+       if (dir != nullptr) {
+@@ -1888,7 +1889,7 @@ Status DBImpl::CompactFilesImpl(
+       file_options_for_compaction_, versions_.get(), &shutting_down_,
+       log_buffer, directories_.GetDbDir(),
+       GetDataDir(c->column_family_data(), c->output_path_id()),
+-      GetDataDir(c->column_family_data(), 0), stats_, &mutex_, &error_handler_,
++      GetBlobDir(c->column_family_data()), stats_, &mutex_, &error_handler_,
+       job_context, table_cache_, &event_logger_,
+       c->mutable_cf_options().paranoid_file_checks,
+       c->mutable_cf_options().report_bg_io_stats, dbname_,
+@@ -1992,9 +1993,8 @@ Status DBImpl::CompactFilesImpl(
+     }
+
+     for (const auto& blob_file : c->edit()->GetBlobFileAdditions()) {
+-      output_file_names->push_back(
+-          BlobFileName(c->immutable_options().cf_paths.front().path,
+-                       blob_file.GetBlobFileNumber()));
++      output_file_names->push_back(BlobFileName(
++          c->immutable_options().GetBlobDir(), blob_file.GetBlobFileNumber()));
+     }
+   }
+
+@@ -4830,7 +4830,7 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
+         mutable_db_options_, file_options_for_compaction_, versions_.get(),
+         &shutting_down_, log_buffer, directories_.GetDbDir(),
+         GetDataDir(c->column_family_data(), c->output_path_id()),
+-        GetDataDir(c->column_family_data(), 0), stats_, &mutex_,
++        GetBlobDir(c->column_family_data()), stats_, &mutex_,
+         &error_handler_, job_context, table_cache_, &event_logger_,
+         c->mutable_cf_options().paranoid_file_checks,
+         c->mutable_cf_options().report_bg_io_stats, dbname_,
+@@ -5240,7 +5240,7 @@ void DBImpl::BuildCompactionJobInfo(
+   // Update BlobFilesInfo.
+   for (const auto& blob_file : c->edit()->GetBlobFileAdditions()) {
+     BlobFileAdditionInfo blob_file_addition_info(
+-        BlobFileName(c->immutable_options().cf_paths.front().path,
++        BlobFileName(c->immutable_options().GetBlobDir(),
+                      blob_file.GetBlobFileNumber()) /*blob_file_path*/,
+         blob_file.GetBlobFileNumber(), blob_file.GetTotalBlobCount(),
+         blob_file.GetTotalBlobBytes());
+@@ -5251,7 +5251,7 @@ void DBImpl::BuildCompactionJobInfo(
+   // Update BlobFilesGarbageInfo.
+   for (const auto& blob_file : c->edit()->GetBlobFileGarbages()) {
+     BlobFileGarbageInfo blob_file_garbage_info(
+-        BlobFileName(c->immutable_options().cf_paths.front().path,
++        BlobFileName(c->immutable_options().GetBlobDir(),
+                      blob_file.GetBlobFileNumber()) /*blob_file_path*/,
+         blob_file.GetBlobFileNumber(), blob_file.GetGarbageBlobCount(),
+         blob_file.GetGarbageBlobBytes());
+diff --git a/db/db_impl/db_impl_files.cc b/db/db_impl/db_impl_files.cc
+index 4884b0c..318c902 100644
+--- a/db/db_impl/db_impl_files.cc
++++ b/db/db_impl/db_impl_files.cc
+@@ -1181,6 +1181,7 @@ std::set<std::string> DBImpl::CollectAllDBPaths() {
+     for (const auto& cf_path : cfd->ioptions().cf_paths) {
+       all_db_paths.insert(NormalizePath(cf_path.path));
+     }
++    all_db_paths.insert(NormalizePath(cfd->ioptions().GetBlobDir()));
+   }
+   return all_db_paths;
+ }
+diff --git a/db/db_impl/db_impl_open.cc b/db/db_impl/db_impl_open.cc
+index cc385bf..2034ccc 100644
+--- a/db/db_impl/db_impl_open.cc
++++ b/db/db_impl/db_impl_open.cc
+@@ -2251,13 +2251,19 @@ Status DBImpl::WriteLevel0TableForRecovery(int job_id, ColumnFamilyData* cfd,
+   constexpr int level = 0;
+
+   if (s.ok() && has_output) {
+-    // Before publishing any recovery edit, make the new SST's directory entry
+-    // durable. Reused MANIFESTs have no CURRENT update, and fresh MANIFEST
+-    // publication should not be relied on to order the recovered SST entry.
+-    s = GetDataDir(cfd, meta.fd.GetPathId())
+-            ->FsyncWithDirOptions(
+-                IOOptions(), nullptr,
+-                DirFsyncOptions(DirFsyncOptions::FsyncReason::kNewFileSynced));
++    // Before publishing any recovery edit, make the new SST and blob directory
++    // entries durable. Reused MANIFESTs have no CURRENT update, and fresh
++    // MANIFEST publication should not be relied on to order recovered files.
++    FSDirectory* data_dir = GetDataDir(cfd, meta.fd.GetPathId());
++    s = data_dir->FsyncWithDirOptions(
++        IOOptions(), nullptr,
++        DirFsyncOptions(DirFsyncOptions::FsyncReason::kNewFileSynced));
++    FSDirectory* blob_dir = GetBlobDir(cfd);
++    if (s.ok() && !blob_file_additions.empty() && blob_dir != data_dir) {
++      s = blob_dir->FsyncWithDirOptions(
++          IOOptions(), nullptr,
++          DirFsyncOptions(DirFsyncOptions::FsyncReason::kNewFileSynced));
++    }
+   }
+
+   if (s.ok() && has_output) {
+@@ -2682,6 +2688,14 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
+       for (auto& cf_path : cf.options.cf_paths) {
+         paths.emplace_back(cf_path.path);
+       }
++      // Only when explicitly set: unset resolves to a cf_paths entry already
++      // in `paths`, and inflating `paths` disables the single-path NoSpace()
++      // recovery below.
++      if (!cf.options.blob_dir.empty() &&
++          std::find(paths.begin(), paths.end(), cf.options.blob_dir) ==
++              paths.end()) {
++        paths.emplace_back(cf.options.blob_dir);
++      }
+     }
+     for (const auto& path : paths) {
+       s = impl->env_->CreateDirIfMissing(path);
+diff --git a/db/flush_job.cc b/db/flush_job.cc
+index 5e87466..61c4c77 100644
+--- a/db/flush_job.cc
++++ b/db/flush_job.cc
+@@ -1116,10 +1116,21 @@ Status FlushJob::WriteLevel0Table() {
+                          : "",
+                      meta_.marked_for_compaction ? " (needs compaction)" : "");
+
+-    if (s.ok() && output_file_directory_ != nullptr && sync_output_directory_) {
+-      s = output_file_directory_->FsyncWithDirOptions(
+-          IOOptions(), nullptr,
+-          DirFsyncOptions(DirFsyncOptions::FsyncReason::kNewFileSynced));
++    const bool has_blob_file_additions =
++        !blob_file_additions.empty() || !external_blob_file_additions_.empty();
++    if (s.ok() && sync_output_directory_) {
++      if (output_file_directory_ != nullptr) {
++        s = output_file_directory_->FsyncWithDirOptions(
++            IOOptions(), nullptr,
++            DirFsyncOptions(DirFsyncOptions::FsyncReason::kNewFileSynced));
++      }
++      FSDirectory* blob_directory = cfd_->GetBlobDir();
++      if (s.ok() && has_blob_file_additions && blob_directory != nullptr &&
++          blob_directory != output_file_directory_) {
++        s = blob_directory->FsyncWithDirOptions(
++            IOOptions(), nullptr,
++            DirFsyncOptions(DirFsyncOptions::FsyncReason::kNewFileSynced));
++      }
+     }
+     TEST_SYNC_POINT_CALLBACK("FlushJob::WriteLevel0Table", &mems_);
+     db_mutex_->Lock();
+@@ -1228,7 +1239,7 @@ std::unique_ptr<FlushJobInfo> FlushJob::GetFlushJobInfo() const {
+   // Update BlobFilesInfo.
+   for (const auto& blob_file : edit_->GetBlobFileAdditions()) {
+     BlobFileAdditionInfo blob_file_addition_info(
+-        BlobFileName(cfd_->ioptions().cf_paths.front().path,
++        BlobFileName(cfd_->ioptions().GetBlobDir(),
+                      blob_file.GetBlobFileNumber()) /*blob_file_path*/,
+         blob_file.GetBlobFileNumber(), blob_file.GetTotalBlobCount(),
+         blob_file.GetTotalBlobBytes());
+diff --git a/db/flush_job.h b/db/flush_job.h
+index 6ea96bb..9fa2637 100644
+--- a/db/flush_job.h
++++ b/db/flush_job.h
+@@ -99,6 +99,11 @@ class FlushJob {
+     return edit_->GetLogNumber();
+   }
+
++  // Null edit_ means nothing was picked, so no blob files were written.
++  bool HasBlobFileAdditions() const {
++    return edit_ != nullptr && !edit_->GetBlobFileAdditions().empty();
++  }
++
+   // Stashes write-path blob files so WriteLevel0Table() can add them to the
+   // same VersionEdit as the flushed SST.
+   void AddExternalBlobFileAdditions(std::vector<BlobFileAddition>&& additions) {
+diff --git a/db/version_builder.cc b/db/version_builder.cc
+index b976c7b..168707e 100644
+--- a/db/version_builder.cc
++++ b/db/version_builder.cc
+@@ -1056,7 +1056,7 @@ class VersionBuilder::Rep : public MutableScalars {
+         assert(shared_meta);
+
+         vs->AddObsoleteBlobFile(shared_meta->GetBlobFileNumber(),
+-                                ioptions->cf_paths.front().path);
++                                ioptions->GetBlobDir());
+       }
+       if (bc) {
+         bc->Evict(shared_meta->GetBlobFileNumber());
+diff --git a/db/version_set.cc b/db/version_set.cc
+index aab2bb6..1b37e6f 100644
+--- a/db/version_set.cc
++++ b/db/version_set.cc
+@@ -2229,7 +2229,7 @@ void Version::GetColumnFamilyMetaData(ColumnFamilyMetaData* cf_meta) {
+
+     cf_meta->blob_files.emplace_back(
+         meta->GetBlobFileNumber(), BlobFileName("", meta->GetBlobFileNumber()),
+-        ioptions.cf_paths.front().path, meta->GetBlobFileSize(),
++        ioptions.GetBlobDir(), meta->GetBlobFileSize(),
+         meta->GetTotalBlobCount(), meta->GetTotalBlobBytes(),
+         meta->GetGarbageBlobCount(), meta->GetGarbageBlobBytes(),
+         meta->GetChecksumMethod(), meta->GetChecksumValue());
+diff --git a/include/rocksdb/advanced_options.h b/include/rocksdb/advanced_options.h
+index 17302d7..84d2f82 100644
+--- a/include/rocksdb/advanced_options.h
++++ b/include/rocksdb/advanced_options.h
+@@ -9,6 +9,7 @@
+ #pragma once
+
+ #include <memory>
++#include <string>
+
+ #include "rocksdb/blob_file_partition_strategy.h"
+ #include "rocksdb/cache.h"
+@@ -16,6 +17,11 @@
+ #include "rocksdb/memtablerep.h"
+ #include "rocksdb/universal_compaction.h"
+
++// Downstream (HarperFast) addition: AdvancedColumnFamilyOptions::blob_dir lets
++// blob files be placed on a different volume than the SST files. Callers can
++// feature-detect the option with this macro.
++#define ROCKSDB_HAS_CF_BLOB_DIR 2
++
+ namespace ROCKSDB_NAMESPACE {
+
+ class Slice;
+@@ -1486,6 +1492,48 @@ struct AdvancedColumnFamilyOptions {
+   explicit AdvancedColumnFamilyOptions(const Options& options);
+
+   // ---------------- OPTIONS NOT SUPPORTED ANYMORE ----------------
++
++  // NOTE: kept last to limit layout churn within this struct. Adding this
++  // field still changes the layout of AdvancedColumnFamilyOptions and its
++  // derived option types. All consumers must rebuild against these patched
++  // headers; this build is not C++ ABI-compatible with stock RocksDB headers.
++  // The directory blob files for this column family are written to and read
++  // from. When empty (the default), blob files live in `cf_paths.front().path`
++  // (falling back to `db_paths.front().path`, then the DB name), which is the
++  // historical behavior.
++  //
++  // Setting this decouples blob placement from SST placement: SST files are
++  // still distributed across `cf_paths` by level (see `GetPathId()`), while
++  // every blob file for this column family goes here. This makes it possible
++  // to keep the LSM tree on fast storage while large values live on cheaper,
++  // higher-capacity storage, or vice versa.
++  //
++  // Unlike `cf_paths`, a blob file's location is NOT recorded per file in the
++  // MANIFEST -- it is derived from this option every time a blob file is
++  // opened, deleted, or reported. Consequences:
++  //
++  // - This option is NOT dynamically changeable, and it must not be changed
++  //   while blob files exist. Doing so orphans the existing blob files and
++  //   reads of the values they hold will fail with a "No such file or
++  //   directory" IO error. To migrate, move the blob files to the new
++  //   directory while the DB is closed, then reopen with the new value. This
++  //   is the same class of hazard as changing `DBOptions::wal_dir`.
++  // - The directory must not be shared with another DB, for the same reason
++  //   `cf_paths` entries must not be: blob file numbers come from a per-DB
++  //   VersionSet, so two DBs sharing a directory mint colliding names and each
++  //   deletes the other's live files during obsolete-file scanning. Column
++  //   families of the SAME DB draw from one file-number space and may share.
++  // - Checkpoint and BackupEngine return NotSupported for a DB with this
++  //   option set, as they already do for one whose files span `cf_paths`.
++  //   They copy every file into a single directory, and restore reads
++  //   `blob_dir` back out of the copied OPTIONS file -- so a restored DB would
++  //   point at the source DB's blob directory and delete its live blob files
++  //   as obsolete. Back a tiered DB up by other means.
++  //
++  // The directory is created at DB open if it does not already exist.
++  //
++  // Default: empty (use cf_paths.front().path)
++  std::string blob_dir = "";
+ };
+
+ }  // namespace ROCKSDB_NAMESPACE
+diff --git a/include/rocksdb/db.h b/include/rocksdb/db.h
+index 9f68f17..c1b9bc2 100644
+--- a/include/rocksdb/db.h
++++ b/include/rocksdb/db.h
+@@ -2160,6 +2160,9 @@ class DB {
+   // read-only). Setting flush_memtable to false is useful when we don't want
+   // to wait for flush which may have to wait for compaction to complete
+   // taking an indeterminate time.
++  // Returns NotSupported if any column family uses blob_dir because this API
++  // cannot represent the blob files' directories. Use
++  // GetLiveFilesStorageInfo() for directory-aware enumeration.
+   //
+   // NOTE: Although GetLiveFiles() followed by GetSortedWalFiles() can generate
+   // a lossless backup, GetLiveFilesStorageInfo() is strongly recommended
+diff --git a/include/rocksdb/options.h b/include/rocksdb/options.h
+index cb7c470..acd69d5 100644
+--- a/include/rocksdb/options.h
++++ b/include/rocksdb/options.h
+@@ -3220,6 +3220,13 @@ struct LiveFilesStorageInfoOptions {
+   // by wal_size_for_flush).
+   // Default: false (uses DBOptions::atomic_flush setting).
+   bool atomic_flush = false;
++  // If true, fail before flushing or capturing files when a column family has
++  // been opened with AdvancedColumnFamilyOptions::blob_dir set. A live copy
++  // cannot be relocated safely unless its implementation preserves that
++  // absolute directory layout. Custom DB implementations may ignore this
++  // option if they can provide equivalent portability guarantees.
++  // Default: false.
++  bool require_portable_files = false;
+ };
+
+ struct WaitForCompactOptions {
+diff --git a/options/cf_options.cc b/options/cf_options.cc
+index fe590a8..d578bd5 100644
+--- a/options/cf_options.cc
++++ b/options/cf_options.cc
+@@ -935,6 +935,9 @@ static std::unordered_map<std::string, OptionTypeInfo>
+          OptionTypeInfo::AsCustomSharedPtr<SstPartitionerFactory>(
+              offsetof(struct ImmutableCFOptions, sst_partitioner_factory),
+              OptionVerificationType::kByName, OptionTypeFlags::kAllowNull)},
++        {"blob_dir",
++         {offsetof(struct ImmutableCFOptions, blob_dir), OptionType::kString,
++          OptionVerificationType::kNormal, OptionTypeFlags::kNone}},
+         {"blob_cache",
+          {offsetof(struct ImmutableCFOptions, blob_cache), OptionType::kUnknown,
+           OptionVerificationType::kNormal,
+@@ -1106,6 +1109,7 @@ ImmutableCFOptions::ImmutableCFOptions(const ColumnFamilyOptions& cf_options)
+       memtable_insert_with_hint_prefix_extractor(
+           cf_options.memtable_insert_with_hint_prefix_extractor),
+       cf_paths(cf_options.cf_paths),
++      blob_dir(cf_options.blob_dir),
+       compaction_thread_limiter(cf_options.compaction_thread_limiter),
+       sst_partitioner_factory(cf_options.sst_partitioner_factory),
+       blob_cache(cf_options.blob_cache),
+diff --git a/options/cf_options.h b/options/cf_options.h
+index f74d136..ce900d3 100644
+--- a/options/cf_options.h
++++ b/options/cf_options.h
+@@ -75,6 +75,8 @@ struct ImmutableCFOptions {
+
+   std::vector<DbPath> cf_paths;
+
++  std::string blob_dir;
++
+   std::shared_ptr<ConcurrentTaskLimiter> compaction_thread_limiter;
+
+   std::shared_ptr<SstPartitionerFactory> sst_partitioner_factory;
+@@ -99,6 +101,15 @@ struct ImmutableCFOptions {
+   bool cf_allow_ingest_behind;
+
+   bool memtable_batch_lookup_optimization;
++
++  // The directory blob files for this column family live in. Every site that
++  // builds a blob file path must go through this so that `blob_dir` and its
++  // `cf_paths.front()` default stay in sync. See
++  // AdvancedColumnFamilyOptions::blob_dir.
++  const std::string& GetBlobDir() const {
++    assert(!blob_dir.empty() || !cf_paths.empty());
++    return blob_dir.empty() ? cf_paths.front().path : blob_dir;
++  }
+ };
+
+ struct ImmutableOptions : public ImmutableDBOptions, public ImmutableCFOptions {
+diff --git a/options/options.cc b/options/options.cc
+index a833993..4190615 100644
+--- a/options/options.cc
++++ b/options/options.cc
+@@ -120,7 +120,8 @@ AdvancedColumnFamilyOptions::AdvancedColumnFamilyOptions(const Options& options)
+       min_tombstones_for_range_conversion(
+           options.min_tombstones_for_range_conversion),
+       memtable_batch_lookup_optimization(
+-          options.memtable_batch_lookup_optimization) {
++          options.memtable_batch_lookup_optimization),
++      blob_dir(options.blob_dir) {
+   assert(memtable_factory.get() != nullptr);
+   if (max_bytes_for_level_multiplier_additional.size() <
+       static_cast<unsigned int>(num_levels)) {
+diff --git a/options/options_helper.cc b/options/options_helper.cc
+index f861fba..1b9451a 100644
+--- a/options/options_helper.cc
++++ b/options/options_helper.cc
+@@ -360,6 +360,7 @@ void UpdateColumnFamilyOptions(const ImmutableCFOptions& ioptions,
+   cf_opts->memtable_insert_with_hint_prefix_extractor =
+       ioptions.memtable_insert_with_hint_prefix_extractor;
+   cf_opts->cf_paths = ioptions.cf_paths;
++  cf_opts->blob_dir = ioptions.blob_dir;
+   cf_opts->compaction_thread_limiter = ioptions.compaction_thread_limiter;
+   cf_opts->sst_partitioner_factory = ioptions.sst_partitioner_factory;
+   cf_opts->blob_cache = ioptions.blob_cache;
+diff --git a/options/options_settable_test.cc b/options/options_settable_test.cc
+index 4ccc790..febdf4d 100644
+--- a/options/options_settable_test.cc
++++ b/options/options_settable_test.cc
+@@ -554,6 +554,9 @@ TEST_F(OptionsSettableTest, ColumnFamilyOptionsAllFieldsSettable) {
+       {offsetof(struct ColumnFamilyOptions,
+                 blob_direct_write_partition_strategy),
+        sizeof(std::shared_ptr<BlobFilePartitionStrategy>)},
++      // Keep in offset order: FillWithSpecialChar walks this list sequentially
++      // and underflows its memset length if an entry is out of place.
++      {offsetof(struct ColumnFamilyOptions, blob_dir), sizeof(std::string)},
+       {offsetof(struct ColumnFamilyOptions, comparator), sizeof(Comparator*)},
+       {offsetof(struct ColumnFamilyOptions, merge_operator),
+        sizeof(std::shared_ptr<MergeOperator>)},
+@@ -683,6 +686,7 @@ TEST_F(OptionsSettableTest, ColumnFamilyOptionsAllFieldsSettable) {
+       "read_triggered_compaction_threshold=0.5;"
+       "sample_for_compression=0;"
+       "enable_blob_files=true;"
++      "blob_dir=path/to/blob_dir;"
+       "enable_blob_direct_write=true;"
+       "min_blob_size=256;"
+       "blob_file_size=1000000;"
+diff --git a/options/options_test.cc b/options/options_test.cc
+index a6a60e6..8ef4aa5 100644
+--- a/options/options_test.cc
++++ b/options/options_test.cc
+@@ -1553,6 +1553,15 @@ TEST_F(OptionsTest, OptionsComposeDecompose) {
+   delete new_cf_opts.compaction_filter;
+ }
+
++TEST_F(OptionsTest, AdvancedColumnFamilyOptionsFromOptions) {
++  Options options;
++  options.blob_dir = "/var/lib/rocksdb/blobs";
++
++  AdvancedColumnFamilyOptions advanced_options(options);
++
++  ASSERT_EQ(advanced_options.blob_dir, options.blob_dir);
++}
++
+ TEST_F(OptionsTest, DBOptionsComposeImmutable) {
+   // Build a DBOptions from an Immutable/Mutable one and verify that
+   // we get same constituent options.
+diff --git a/utilities/backup/backup_engine_test.cc b/utilities/backup/backup_engine_test.cc
+index 32870e5..5e97d75 100644
+--- a/utilities/backup/backup_engine_test.cc
++++ b/utilities/backup/backup_engine_test.cc
+@@ -1100,6 +1100,14 @@ class BackupEngineTestWithParam : public BackupEngineTest,
+   }
+ };
+
++TEST_F(BackupEngineTest, RejectsConfiguredBlobDir) {
++  options_.blob_dir = dbname_ + "/blobs";
++  OpenDBAndBackupEngine(true /* destroy_old_data */);
++
++  Status s = backup_engine_->CreateNewBackup(db_.get());
++  ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
++}
++
+ TEST_F(BackupEngineTest, IncrementalRestore) {
+   // Required for excluding files.
+   engine_options_->schema_version = 2;
+diff --git a/utilities/checkpoint/checkpoint_impl.cc b/utilities/checkpoint/checkpoint_impl.cc
+index 150c776..9faccb2 100644
+--- a/utilities/checkpoint/checkpoint_impl.cc
++++ b/utilities/checkpoint/checkpoint_impl.cc
+@@ -499,6 +499,7 @@ Status CheckpointImpl::CreateCustomCheckpoint(
+   opts.include_checksum_info = get_live_table_checksum;
+   opts.wal_size_for_flush = log_size_for_flush;
+   opts.atomic_flush = atomic_flush;
++  opts.require_portable_files = true;
+
+   std::vector<LiveFileStorageInfo> infos;
+   {
+@@ -509,7 +510,7 @@ Status CheckpointImpl::CreateCustomCheckpoint(
+   }
+
+   // Verify that everything except WAL files are in same directory
+-  // (db_paths / cf_paths not supported)
++  // (db_paths / cf_paths / blob_dir not supported)
+   std::unordered_set<std::string> dirs;
+   for (auto& info : infos) {
+     if (info.file_type != kWalFile) {
+@@ -518,7 +519,8 @@ Status CheckpointImpl::CreateCustomCheckpoint(
+   }
+   if (dirs.size() > 1) {
+     return Status::NotSupported(
+-        "db_paths / cf_paths not supported for Checkpoint nor BackupEngine");
++        "db_paths / cf_paths / blob_dir not supported for Checkpoint nor "
++        "BackupEngine");
+   }
+
+   bool same_fs = true;
+diff --git a/utilities/checkpoint/checkpoint_test.cc b/utilities/checkpoint/checkpoint_test.cc
+index 77a9ddb..e98edea 100644
+--- a/utilities/checkpoint/checkpoint_test.cc
++++ b/utilities/checkpoint/checkpoint_test.cc
+@@ -372,6 +372,25 @@ TEST_F(CheckpointTest, CheckpointWithBlob) {
+   ASSERT_EQ(value, blob);
+ }
+
++TEST_F(CheckpointTest, CheckpointRejectsConfiguredBlobDirBeforeFirstBlob) {
++  Options options = CurrentOptions();
++  options.enable_blob_files = true;
++  options.blob_dir = dbname_ + "/blobs";
++  DestroyAndReopen(options);
++
++  Checkpoint* checkpoint = nullptr;
++  ASSERT_OK(Checkpoint::Create(db_.get(), &checkpoint));
++  std::unique_ptr<Checkpoint> checkpoint_guard(checkpoint);
++  Status s = checkpoint->CreateCheckpoint(snapshot_name_);
++  ASSERT_TRUE(s.IsNotSupported());
++  ASSERT_EQ(0, NumTableFilesAtLevel(0));
++
++  checkpoint_guard.reset();
++  Close();
++  ASSERT_OK(DestroyDB(dbname_, options));
++  Reopen(CurrentOptions());
++}
++
+ TEST_F(CheckpointTest, ExportColumnFamilyWithLinks) {
+   // Create a database
+   auto options = CurrentOptions();
