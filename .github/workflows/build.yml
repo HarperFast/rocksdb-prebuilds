@@ -517,18 +517,44 @@ jobs:
         shell: bash
         env:
           RELEASE_VERSION: ${{ needs.check.outputs.release_version }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          REPO: ${{ github.repository }}
         run: |
           # `|| true`: Actions' default `bash -e` would kill the step on the assignment.
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --retry 3 --retry-connrefused \
-            -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/releases/tags/v$RELEASE_VERSION" || true)
-          if [[ "$STATUS" == 200 ]]; then
-            # Standing down, not failing: the tag holds one run's artifacts either way.
-            echo "lost_race=true" >> "$GITHUB_OUTPUT"
-            echo "::warning title=Release already published::v$RELEASE_VERSION was published by another run while this one was building; skipping publish. To ship this run's build instead, delete that release and re-dispatch, or pick a new revision."
-          elif [[ "$STATUS" != 404 ]]; then
+          RESPONSE=$(curl -s -w $'\n%{http_code}' --retry 3 --retry-connrefused \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/$REPO/releases/tags/v$RELEASE_VERSION" || true)
+          STATUS=$(printf '%s' "$RESPONSE" | tail -n1)
+          BODY=$(printf '%s' "$RESPONSE" | sed '$d')
+
+          if [[ "$STATUS" == 404 ]]; then
+            exit 0
+          elif [[ "$STATUS" != 200 ]]; then
             echo "Unable to verify release v$RELEASE_VERSION (HTTP $STATUS)" >&2
             exit 1
+          fi
+
+          # An existing release record is not a finished release. action-gh-release
+          # publishes the release and only then uploads its assets, concurrently, so a
+          # single failed upload leaves a published release missing platforms. Standing
+          # down on the record alone would accept that partial release as the winner and
+          # let a re-run go green over it. Stand down only for a release that already
+          # carries every archive this run built; otherwise finish the job.
+          EXPECTED=$(find artifacts -name '*.tar.xz' -exec basename {} \; | sort)
+          if [[ -z "$EXPECTED" ]]; then
+            echo "No .tar.xz artifacts were downloaded; refusing to judge release v$RELEASE_VERSION" >&2
+            exit 1
+          fi
+          PUBLISHED=$(printf '%s' "$BODY" | jq -r '.assets[]?.name' | sort)
+          MISSING=$(comm -23 <(printf '%s\n' "$EXPECTED") <(printf '%s\n' "$PUBLISHED"))
+
+          if [[ -z "$MISSING" ]]; then
+            # Standing down, not failing: the tag holds one run's artifacts either way.
+            echo "lost_race=true" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Release already published::v$RELEASE_VERSION was published complete by another run while this one was building; skipping publish. To ship this run's build instead, delete that release and re-dispatch, or pick a new revision."
+          else
+            echo "::warning title=Completing a partial release::v$RELEASE_VERSION exists but is missing $(printf '%s\n' "$MISSING" | grep -c .) archive(s), so it was never finished; this run uploads them instead of standing down."
+            printf '%s\n' "$MISSING" | sed 's/^/  missing: /'
           fi
 
       - name: Create release
