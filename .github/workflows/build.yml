@@ -1,5 +1,12 @@
 name: Automated RocksDB Builds
 
+# Workflow-level `concurrency` cannot see `needs`, so this key approximates the release
+# version from the raw inputs the `check` job composes it from; the `release` job holds
+# the exact one. Empty inputs share a group on purpose: they resolve to the same version.
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.rocksdb_version }}-${{ inputs.prerelease_revision }}-${{ inputs.experimental_patches }}
+  cancel-in-progress: false
+
 on:
   schedule:
     - cron: "30 2 * * *"
@@ -266,9 +273,9 @@ jobs:
           fi
 
           if [[ "$SHOULD_BUILD" == true ]]; then
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --retry 3 --retry-connrefused \
               -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" \
-              "https://api.github.com/repos/${{ github.repository }}/releases/tags/v$RELEASE_VERSION")
+              "https://api.github.com/repos/${{ github.repository }}/releases/tags/v$RELEASE_VERSION" || true)
             if [[ "$STATUS" == 200 ]]; then
               echo "Release v$RELEASE_VERSION already exists; choose a new revision" >&2
               exit 1
@@ -518,6 +525,13 @@ jobs:
     name: Release
     needs: [check, build]
     if: ${{ needs.check.outputs.should_build == 'true' }}
+    outputs:
+      lost_race: ${{ steps.publish-release.outputs.lost_race }}
+    # Two runs can clear the approximate workflow-level key and still resolve to the
+    # same release_version.
+    concurrency:
+      group: release-${{ needs.check.outputs.release_version }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -528,7 +542,152 @@ jobs:
         with:
           path: artifacts
 
+      - name: Publish complete GitHub release
+        id: publish-release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          MISMATCH_NOTE: ${{ needs.check.outputs.mismatch_note }}
+          PRERELEASE: ${{ inputs.prerelease_revision != '' || needs.check.outputs.experimental_dirs != '' }}
+          EXPERIMENTAL_NOTE: ${{ needs.check.outputs.experimental_note }}
+          ROCKSDB_VERSION: ${{ needs.check.outputs.version }}
+          RELEASE_VERSION: ${{ needs.check.outputs.release_version }}
+        run: |
+          set -euo pipefail
+
+          TAG_NAME="v$RELEASE_VERSION"
+          OWNER_MARKER="<!-- rocksdb-prebuilds-owner:$GITHUB_RUN_ID -->"
+          COMPLETE_MARKER="<!-- rocksdb-prebuilds-complete -->"
+          RELEASE_BODY="$(printf '%s\n\n%s\n\n%s\n\n%s\n\n%s' \
+            "Automated prebuilds for RocksDB v$RELEASE_VERSION." \
+            "$MISMATCH_NOTE" \
+            "$EXPERIMENTAL_NOTE" \
+            "Built from upstream tag v$ROCKSDB_VERSION — release notes: https://github.com/facebook/rocksdb/releases/tag/v$ROCKSDB_VERSION" \
+            "$OWNER_MARKER")"
+
+          get_releases() {
+            gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" |
+              jq --arg tag "$TAG_NAME" '[.[][] | select(.tag_name == $tag)]'
+          }
+
+          RELEASES="$(get_releases)"
+          RELEASE_COUNT="$(jq 'length' <<< "$RELEASES")"
+          if [[ "$RELEASE_COUNT" -gt 1 ]]; then
+            echo "Multiple GitHub releases claim $TAG_NAME; refusing to publish" >&2
+            exit 1
+          fi
+
+          if [[ "$RELEASE_COUNT" -eq 1 ]]; then
+            RELEASE="$(jq '.[0]' <<< "$RELEASES")"
+            OWNER_COUNT="$(jq '[(.body // "") | scan("<!-- rocksdb-prebuilds-owner:[0-9]+ -->")] | unique | length' <<< "$RELEASE")"
+            if [[ "$OWNER_COUNT" -ne 1 ]]; then
+              echo "GitHub release $TAG_NAME has missing or ambiguous ownership metadata" >&2
+              exit 1
+            fi
+
+            OWNED_BY_THIS_RUN="$(jq --arg marker "$OWNER_MARKER" '(.body // "") | contains($marker)' <<< "$RELEASE")"
+            IS_COMPLETE="$(jq --arg marker "$COMPLETE_MARKER" '(.body // "") | contains($marker)' <<< "$RELEASE")"
+            IS_DRAFT="$(jq '.draft' <<< "$RELEASE")"
+
+            if [[ "$IS_DRAFT" == false ]]; then
+              if [[ "$IS_COMPLETE" != true ]]; then
+                echo "Published GitHub release $TAG_NAME has no completion marker; refusing to treat it as complete" >&2
+                exit 1
+              elif [[ "$OWNED_BY_THIS_RUN" != true ]]; then
+                echo "lost_race=true" >> "$GITHUB_OUTPUT"
+                echo "::warning title=Release already published::$TAG_NAME was completed by another run while this one was building; skipping publish."
+                exit 0
+              fi
+
+              echo "GitHub release $TAG_NAME was already completed by this run; continuing with its S3 mirror"
+              exit 0
+            elif [[ "$OWNED_BY_THIS_RUN" != true ]]; then
+              echo "Draft GitHub release $TAG_NAME belongs to another run; refusing to overwrite it" >&2
+              exit 1
+            fi
+
+            RELEASE_ID="$(jq -r '.id' <<< "$RELEASE")"
+          else
+            CREATE_PAYLOAD="$(jq -n \
+              --arg tag "$TAG_NAME" \
+              --arg target "$GITHUB_SHA" \
+              --arg name "RocksDB v$RELEASE_VERSION" \
+              --arg body "$RELEASE_BODY" \
+              --argjson prerelease "$PRERELEASE" \
+              '{tag_name:$tag, target_commitish:$target, name:$name, body:$body, draft:true, prerelease:$prerelease}')"
+            RELEASE="$(gh api --method POST "repos/$GITHUB_REPOSITORY/releases" --input - <<< "$CREATE_PAYLOAD")"
+            RELEASE_ID="$(jq -r '.id' <<< "$RELEASE")"
+
+            RELEASES="$(get_releases)"
+            if [[ "$(jq 'length' <<< "$RELEASES")" -ne 1 ]] ||
+              [[ "$(jq -r '.[0].id' <<< "$RELEASES")" != "$RELEASE_ID" ]]; then
+              echo "Unable to establish unique ownership of GitHub release $TAG_NAME" >&2
+              exit 1
+            fi
+            RELEASE="$(jq '.[0]' <<< "$RELEASES")"
+            if [[ "$(jq '.draft' <<< "$RELEASE")" != true ]] ||
+              [[ "$(jq --arg marker "$OWNER_MARKER" '(.body // "") | contains($marker)' <<< "$RELEASE")" != true ]]; then
+              echo "New GitHub release $TAG_NAME is not a run-owned draft" >&2
+              exit 1
+            fi
+          fi
+
+          mapfile -d '' ASSETS < <(find artifacts -type f -name '*.tar.xz' -print0 | sort -z)
+          if [[ "${#ASSETS[@]}" -eq 0 ]]; then
+            echo "No release assets were downloaded" >&2
+            exit 1
+          fi
+
+          DUPLICATE_NAMES="$(printf '%s\n' "${ASSETS[@]##*/}" | LC_ALL=C sort | uniq -d)"
+          if [[ -n "$DUPLICATE_NAMES" ]]; then
+            echo "Duplicate release asset names:" >&2
+            printf '%s\n' "$DUPLICATE_NAMES" >&2
+            exit 1
+          fi
+
+          while IFS= read -r ASSET_ID; do
+            [[ -z "$ASSET_ID" ]] || gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$ASSET_ID"
+          done < <(jq -r '.assets[].id' <<< "$RELEASE")
+
+          for ASSET in "${ASSETS[@]}"; do
+            ASSET_NAME="${ASSET##*/}"
+            if [[ ! "$ASSET_NAME" =~ ^[A-Za-z0-9._-]+$ ]]; then
+              echo "Unsafe release asset name: $ASSET_NAME" >&2
+              exit 1
+            fi
+            curl --fail-with-body --silent --show-error \
+              --request POST \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary "@$ASSET" \
+              "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets?name=$ASSET_NAME" >/dev/null
+          done
+
+          EXPECTED_ASSETS="$(mktemp)"
+          ACTUAL_ASSETS="$(mktemp)"
+          for ASSET in "${ASSETS[@]}"; do
+            printf '%s\t%s\n' "${ASSET##*/}" "$(wc -c < "$ASSET" | tr -d '[:space:]')"
+          done | LC_ALL=C sort > "$EXPECTED_ASSETS"
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
+            --jq '.assets[] | [.name, .size] | @tsv' | LC_ALL=C sort > "$ACTUAL_ASSETS"
+          if ! diff -u "$EXPECTED_ASSETS" "$ACTUAL_ASSETS"; then
+            echo "Draft release assets do not exactly match this run's artifacts" >&2
+            exit 1
+          fi
+
+          FINAL_PAYLOAD="$(jq -n \
+            --arg body "$RELEASE_BODY"$'\n\n'"$COMPLETE_MARKER" \
+            --argjson prerelease "$PRERELEASE" \
+            '{body:$body, draft:false, prerelease:$prerelease}')"
+          PUBLISHED="$(gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --input - <<< "$FINAL_PAYLOAD")"
+          if [[ "$(jq '.draft == false' <<< "$PUBLISHED")" != true ]] ||
+            [[ "$(jq --arg marker "$COMPLETE_MARKER" '(.body // "") | contains($marker)' <<< "$PUBLISHED")" != true ]]; then
+            echo "GitHub release $TAG_NAME did not finalize with its completion marker" >&2
+            exit 1
+          fi
+
       - name: Configure AWS credentials
+        if: ${{ steps.publish-release.outputs.lost_race != 'true' }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -536,28 +695,12 @@ jobs:
           aws-region: us-east-2
 
       - name: Upload artifacts to S3
+        if: ${{ steps.publish-release.outputs.lost_race != 'true' }}
         run: |
-          aws s3 cp artifacts/ s3://harper-artifacts/rocksdb-prebuilds/v${{ needs.check.outputs.release_version }}/ --recursive
-
-      - name: Create release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: artifacts/**/*.tar.xz
-          body: |
-            Automated prebuilds for RocksDB v${{ needs.check.outputs.release_version }}.
-
-            ${{ needs.check.outputs.mismatch_note }}
-
-            ${{ needs.check.outputs.experimental_note }}
-
-            Built from upstream tag v${{ needs.check.outputs.version }} — release notes: https://github.com/facebook/rocksdb/releases/tag/v${{ needs.check.outputs.version }}
-          name: RocksDB v${{ needs.check.outputs.release_version }}
-          tag_name: v${{ needs.check.outputs.release_version }}
-          prerelease: ${{ inputs.prerelease_revision != '' || needs.check.outputs.experimental_dirs != '' }}
-          token: ${{ secrets.GH_TOKEN }}
+          aws s3 sync artifacts/ s3://harper-artifacts/rocksdb-prebuilds/v${{ needs.check.outputs.release_version }}/ --delete
 
   on-release-success:
-    if: success() && !cancelled() && needs.check.outputs.should_build == 'true'
+    if: success() && !cancelled() && needs.check.outputs.should_build == 'true' && needs.release.outputs.lost_race != 'true'
     name: Release success
     needs: [check, release]
     runs-on: ubuntu-latest
