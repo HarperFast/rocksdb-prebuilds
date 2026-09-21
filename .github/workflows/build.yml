@@ -3,9 +3,14 @@ name: Automated RocksDB Builds
 # Workflow-level `concurrency` cannot see `needs`, so this key approximates the release
 # version from the raw inputs the `check` job composes it from; the `release` job holds
 # the exact one. Empty inputs share a group on purpose: they resolve to the same version.
+# A pull request runs only `validate`, which publishes nothing, so it gets a per-PR group
+# instead: its `inputs` are all empty, so sharing the release key would put it in the same
+# group as the nightly build, where a queued run cancels whatever is already pending.
 concurrency:
-  group: ${{ github.workflow }}-${{ inputs.rocksdb_version }}-${{ inputs.prerelease_revision }}-${{ inputs.experimental_patches }}
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.number) || format('{0}-{1}-{2}', inputs.rocksdb_version, inputs.prerelease_revision, inputs.experimental_patches) }}
+  # Superseding a PR's own in-flight validation is what should happen; superseding a
+  # release build is not, and the two can no longer land in one group.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 on:
   # Only the inputs the validate job actually builds from: it applies the
