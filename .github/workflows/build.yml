@@ -506,6 +506,21 @@ jobs:
             test -f "${GITHUB_WORKSPACE}/dist/lib/liblz4.a"
           fi
 
+      # vcpkg only warns about an unused CMake variable, so a renamed upstream option
+      # would silently re-enable PerfContext. With it compiled out, no object references
+      # perf_context directly or through its TLS wrapper/init functions.
+      - name: Verify PerfContext is compiled out
+        if: ${{ !startsWith(matrix.platform.target, 'windows-') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          syms="$(nm -A "${GITHUB_WORKSPACE}/dist/lib/librocksdb.a")"
+          refs="$(grep -cE ' U _{1,2}Z(TW|TH)?N7rocksdb12perf_contextE$' <<< "$syms" || true)"
+          if [[ "$refs" -ne 0 ]]; then
+            echo "::error::librocksdb.a has $refs references to rocksdb::perf_context; WITH_PERF_CONTEXT=OFF did not apply"
+            exit 1
+          fi
+
       - name: Create archive
         id: archive
         shell: bash
@@ -558,11 +573,12 @@ jobs:
           TAG_NAME="v$RELEASE_VERSION"
           OWNER_MARKER="<!-- rocksdb-prebuilds-owner:$GITHUB_RUN_ID -->"
           COMPLETE_MARKER="<!-- rocksdb-prebuilds-complete -->"
-          RELEASE_BODY="$(printf '%s\n\n%s\n\n%s\n\n%s\n\n%s' \
+          RELEASE_BODY="$(printf '%s\n\n%s\n\n%s\n\n%s\n\n%s\n\n%s' \
             "Automated prebuilds for RocksDB v$RELEASE_VERSION." \
             "$MISMATCH_NOTE" \
             "$EXPERIMENTAL_NOTE" \
             "Built from upstream tag v$ROCKSDB_VERSION — release notes: https://github.com/facebook/rocksdb/releases/tag/v$ROCKSDB_VERSION" \
+            "Built with PerfContext compiled out (\`WITH_PERF_CONTEXT=OFF\`): \`get_perf_context()\` counters stay zero and \`rocksdb.db.mutex.wait.micros\` is not recorded." \
             "$OWNER_MARKER")"
 
           get_releases() {

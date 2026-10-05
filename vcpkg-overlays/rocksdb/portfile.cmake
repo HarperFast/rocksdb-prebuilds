@@ -53,10 +53,9 @@ vcpkg_cmake_configure(
     -DPORTABLE=1 # Minimum CPU arch to support, or 0 = current CPU, 1 = baseline CPU
     -DROCKSDB_BUILD_SHARED=${ROCKSDB_BUILD_SHARED}
     -DCMAKE_DISABLE_FIND_PACKAGE_Git=TRUE
-    # PerfContext counters run on every memtable key comparison, and each one is a
-    # thread_local access. Linked into a dlopen'd addon those accesses compile to
-    # general-dynamic TLS (__tls_get_addr plus a TLS-init call), a measurable share
-    # of commit CPU. rocksdb-js never reads PerfContext, so compile it out.
+    # PerfContext counters run on every memtable key comparison, each a thread_local
+    # access; linked into a dlopen'd shared object that is general-dynamic TLS
+    # (__tls_get_addr plus a TLS-init call). The README documents what consumers lose.
     -DWITH_PERF_CONTEXT=OFF
     ${FEATURE_OPTIONS}
   OPTIONS_DEBUG
