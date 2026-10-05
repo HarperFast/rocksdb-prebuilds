@@ -4,6 +4,10 @@ Automated RocksDB prebuilt binaries for Linux, macOS, and Windows.
 
 The static RocksDB builds include bzip2, lz4, snappy, zlib, and zstd compression support.
 
+The builds compile out RocksDB's `PerfContext` (`WITH_PERF_CONTEXT=OFF`, which defines
+`NPERF_CONTEXT`). `rocksdb::get_perf_context()` still links but its counters stay zero, and the
+`rocksdb.db.mutex.wait.micros` statistic (recorded only at `StatsLevel::kAll`) is never recorded.
+
 Releases: https://github.com/HarperFast/rocksdb-prebuilds/releases
 
 To publish a prerelease build of a RocksDB version (for example, to validate a build configuration
