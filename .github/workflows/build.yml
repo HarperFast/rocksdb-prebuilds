@@ -528,7 +528,9 @@ jobs:
             alpine:latest \
             sh -c "
               set -e
-              apk add --no-cache bash binutils build-base cmake ninja xz
+              # grep: the verifier counts markers in a static library, and BusyBox grep does not
+              # handle binary input or -o counting dependably.
+              apk add --no-cache bash binutils build-base cmake grep ninja xz
               bash /workspace/.github/scripts/verify-prebuild-archive.sh
             "
 

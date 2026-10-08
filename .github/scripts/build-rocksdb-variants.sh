@@ -78,8 +78,7 @@ readonly ENABLED_LIB="${DIST}/lib/${LIB_NAME}"
 ENABLED_SHA="$(sha256 "$ENABLED_LIB")"
 readonly ENABLED_SHA
 
-# In place rather than a second install root: the dependencies stay installed, and dist/ above
-# remains the only copy of the enabled tree for the header comparison.
+# In place: the dependencies stay installed, and dist/ stays the only copy of the enabled tree.
 echo "=== Installing RocksDB (PerfContext disabled) ==="
 install_rocksdb "rocksdb[${VARIANT_SUBDIR}]" --recurse
 

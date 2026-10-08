@@ -40,7 +40,7 @@ detail.
   also reaches the archive as CodeView type info — identically for both variants, which is what
   leaves the literal as the enabled library's margin. A control string present in both guards the
   search itself, because a search that silently matched nothing would pass as an absence. The `nm` check adds
-  a second, independent reading on the eight non-Windows targets. Both are asserted in **both**
+  a second, independent reading on the six non-Windows targets. Both are asserted in **both**
   directions: a one-sided check still passes when the two libraries are swapped.
 - `tools/perf-context-probe` links each archived library in turn and asserts
   `user_key_comparison_count` is non-zero for the enabled one and zero for the disabled one. The
