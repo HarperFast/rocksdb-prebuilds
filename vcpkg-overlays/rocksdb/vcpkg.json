@@ -45,6 +45,9 @@
         "lz4"
       ]
     },
+    "no-perf-context": {
+      "description": "Compile out PerfContext (-DWITH_PERF_CONTEXT=OFF, which defines NPERF_CONTEXT)"
+    },
     "numa": {
       "description": "build with NUMA policy support",
       "supports": "linux",
