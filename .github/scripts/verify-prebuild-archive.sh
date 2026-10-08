@@ -1,17 +1,43 @@
 #!/usr/bin/env bash
 # Verify a finished release archive, from a fresh extraction of the archive itself.
 #
-# Required environment:
-#   ARCHIVE     the .tar.xz to verify
-#   SCRATCH     empty working directory for the extraction and probe build
-#   PROBE_DIR   checkout path of tools/perf-context-probe
-#   RUN_PROBE   true to compile and run the probe; false for a cross-compiled target
-#
-# Optional environment:
-#   PROBE_CMAKE_ARGS  whitespace-separated extra CMake arguments (MSVC runtime selection)
 set -euo pipefail
 
-: "${ARCHIVE:?}" "${SCRATCH:?}" "${PROBE_DIR:?}" "${RUN_PROBE:?}"
+usage() {
+  cat >&2 <<'USAGE'
+usage: ARCHIVE=<path.tar.xz> .github/scripts/verify-prebuild-archive.sh
+
+Verifies a finished release archive from a fresh extraction of the archive itself.
+
+Required:
+  ARCHIVE           the .tar.xz to verify
+
+Optional:
+  SCRATCH           working directory for the extraction and probe build (default: a new temp dir)
+  PROBE_DIR         tools/perf-context-probe (default: derived from this script's location)
+  RUN_PROBE         true (default) to compile and run the probe; false for a cross-compiled target
+  PROBE_CMAKE_ARGS  whitespace-separated extra CMake arguments (MSVC runtime selection)
+USAGE
+}
+
+if [[ -z "${ARCHIVE:-}" ]]; then
+  echo "verify-prebuild-archive.sh: missing required environment: ARCHIVE" >&2
+  echo >&2
+  usage
+  exit 2
+fi
+if [[ ! -f "$ARCHIVE" ]]; then
+  echo "verify-prebuild-archive.sh: no such archive: $ARCHIVE" >&2
+  exit 2
+fi
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+: "${PROBE_DIR:=$(cd "${script_dir}/../.." && pwd)/tools/perf-context-probe}"
+: "${RUN_PROBE:=true}"
+if [[ -z "${SCRATCH:-}" ]]; then
+  SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/rocksdb-archive-check.XXXXXX")"
+  echo "Extracting and probing under $SCRATCH"
+fi
 
 readonly VARIANT_SUBDIR="no-perf-context"
 readonly PREFIX="${SCRATCH}/extracted"
