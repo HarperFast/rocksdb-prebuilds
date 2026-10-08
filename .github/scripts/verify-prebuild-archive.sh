@@ -163,9 +163,21 @@ run_probe() {
     "$@"
   cmake --build "$(cmake_path "$build_dir")" --config Release
 
-  local exe="${build_dir}/perf-context-probe"
-  [[ -x "$exe" ]] || exe="${build_dir}/Release/perf-context-probe.exe"
-  [[ -x "$exe" ]] || { echo "::error::Probe binary not found under $build_dir" >&2; exit 1; }
+  # Single-config generators put it at the top of the build dir, multi-config ones under Release/.
+  local exe="" candidate
+  for candidate in \
+    "${build_dir}/perf-context-probe" \
+    "${build_dir}/perf-context-probe.exe" \
+    "${build_dir}/Release/perf-context-probe.exe"; do
+    if [[ -x "$candidate" ]]; then
+      exe="$candidate"
+      break
+    fi
+  done
+  if [[ -z "$exe" ]]; then
+    echo "::error::Probe binary not found under $build_dir" >&2
+    exit 1
+  fi
 
   "$exe" "$expectation" "${SCRATCH}/db-${name}"
 }
