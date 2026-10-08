@@ -44,6 +44,10 @@ set_target_properties(RocksDB::rocksdb PROPERTIES
   IMPORTED_LOCATION_RELEASE "${prefix}/lib/no-perf-context/librocksdb.a")
 ```
 
+Only the release library has a second variant. `debug/lib/librocksdbd.a` (`rocksdbd.lib`) is the
+PerfContext-enabled build and has no `no-perf-context` counterpart, so a Debug-configuration build
+keeps resolving `IMPORTED_LOCATION_DEBUG` to the enabled library whatever the override above sets.
+
 `pkg-config rocksdb` likewise names the enabled library. Link exactly one of the two: putting both
 on a link line is an error, not a preference.
 

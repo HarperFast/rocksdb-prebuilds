@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Build the two published RocksDB variants and stage them into one dist tree.
 #
-# The glibc/macOS/Windows job and the musl container job both call this, so the two variants cannot
-# drift between build paths the way two copies of the invocation would.
+# Called by both the glibc/macOS/Windows job and the musl container job.
 #
 # Required environment:
 #   WORKSPACE      directory holding dist/ (created here if missing)
@@ -59,8 +58,8 @@ sha256() {
   fi
 }
 
-# The enabled variant is what `vcpkg install rocksdb` has always produced, and it stays at the
-# historical dist/lib path. Install it first so the second install can reuse its dependency builds.
+# Enabled first: it is what the historical dist/lib path must hold, and its dependency builds are
+# what the second install reuses instead of rebuilding.
 echo "=== Installing RocksDB (PerfContext enabled) ==="
 install_rocksdb rocksdb
 
@@ -80,14 +79,12 @@ readonly ENABLED_LIB="${DIST}/lib/${LIB_NAME}"
 ENABLED_SHA="$(sha256 "$ENABLED_LIB")"
 readonly ENABLED_SHA
 
-# Replacing rocksdb in place rather than installing into a second root: the dependency builds this
-# run already produced stay installed and are not rebuilt, and dist/ above is now the only copy of
-# the enabled tree, which is what the header comparison below needs.
+# In place rather than a second install root: the dependencies stay installed, and dist/ above is
+# now the only copy of the enabled tree, which is what the header comparison needs.
 echo "=== Installing RocksDB (PerfContext disabled) ==="
 install_rocksdb "rocksdb[${VARIANT_SUBDIR}]" --recurse
 
-# Only worth shipping one copy of the headers if the variants really do agree on them; a future
-# RocksDB that generated a variant-dependent header would otherwise ship the wrong one silently.
+# One shipped copy of the headers is only correct while the variants agree on them.
 echo "=== Comparing installed public headers ==="
 if ! diff -r "${DIST}/include" "${INSTALLED}/include"; then
   echo "Installed public headers differ between the PerfContext variants; they cannot share one copy" >&2
@@ -99,8 +96,8 @@ mkdir -p "${DIST}/lib/${VARIANT_SUBDIR}"
 cp "${INSTALLED}/lib/${LIB_NAME}" "${DIST}/lib/${VARIANT_SUBDIR}/${LIB_NAME}"
 readonly DISABLED_LIB="${DIST}/lib/${VARIANT_SUBDIR}/${LIB_NAME}"
 
-# Fail before an archive exists rather than publishing a pair that is secretly one library twice:
-# a binary-cache hit on the second install, or a staging copy from the wrong source, both land here.
+# A binary-cache hit on the second install, or a staging copy from the wrong source, both end as
+# one library shipped twice.
 for lib in "$ENABLED_LIB" "$DISABLED_LIB"; do
   if [[ ! -f "$lib" ]]; then
     echo "Expected a regular file at $lib" >&2

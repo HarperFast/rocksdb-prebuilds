@@ -40,9 +40,8 @@ vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
     "no-perf-context" WITH_PERF_CONTEXT
 )
 
-# A release ships both variants from this one portfile, so they differ only in WITH_PERF_CONTEXT.
-# Selecting a feature on the command line is documented to keep the defaults; assert it rather than
-# trust it, because losing one here would ship a pair that is not configuration-identical.
+# A release ships both variants from this one portfile; losing a compression feature on either
+# install would publish a pair that is not configuration-identical.
 foreach(compression_option IN ITEMS WITH_SNAPPY WITH_LZ4 WITH_ZLIB WITH_ZSTD WITH_BZ2)
   if(NOT "-D${compression_option}=ON" IN_LIST FEATURE_OPTIONS)
     message(FATAL_ERROR "${compression_option} is not ON; every rocksdb-prebuilds library ships all five compression libraries")
@@ -73,9 +72,7 @@ vcpkg_cmake_configure(
 )
 
 # vcpkg only warns when a -D names a variable the project never declared, so an upstream rename of
-# WITH_PERF_CONTEXT would silently flip the variant. Assert the definition the option exists to
-# produce, read back out of the generated build system: that is the effect the published pair
-# depends on, and unlike a symbol scan it is readable on every target, cross-compiled ones included.
+# WITH_PERF_CONTEXT would otherwise flip the variant silently.
 set(release_build_dir "${CURRENT_BUILDTREES_DIR}/${TARGET_TRIPLET}-rel")
 file(GLOB_RECURSE build_system_files
   "${release_build_dir}/build.ninja"
@@ -87,7 +84,8 @@ if(NOT build_system_files)
 endif()
 set(nperf_context_defined FALSE)
 foreach(build_system_file IN LISTS build_system_files)
-  file(STRINGS "${build_system_file}" nperf_context_lines REGEX "NPERF_CONTEXT" LIMIT_COUNT 1)
+  file(STRINGS "${build_system_file}" nperf_context_lines LIMIT_COUNT 1
+    REGEX "[-/]D *NPERF_CONTEXT|PreprocessorDefinitions.*NPERF_CONTEXT")
   if(nperf_context_lines)
     set(nperf_context_defined TRUE)
     break()

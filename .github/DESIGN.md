@@ -2,9 +2,11 @@
 
 ## The two PerfContext variants in one archive
 
-**Invariant.** Every release archive holds exactly two RocksDB static libraries, built from the same
-source, patches, architecture and configure options, differing only in `WITH_PERF_CONTEXT`; the
-library at the historical `lib/` path is always the PerfContext-**enabled** one.
+**Invariant.** Every release archive holds two *release* RocksDB static libraries, built from the
+same source, patches, architecture and configure options, differing only in `WITH_PERF_CONTEXT`; the
+library at the historical `lib/` path is always the PerfContext-**enabled** one. The debug library
+under `debug/lib/` is unchanged and exists only in the enabled variant: it is large, and no consumer
+links it.
 
 **Why it has to be stated.** Nothing in the artifact distinguishes the two files. They have the same
 basename, the same ABI, the same headers and nearly the same size, so a build that silently produced
@@ -30,9 +32,14 @@ detail.
   between variants, if the staged enabled library changed during the second install, or if the two
   staged libraries hash the same.
 - `.github/scripts/verify-prebuild-archive.sh` re-checks all of that from a fresh extraction of the
-  finished archive, and asserts `rocksdb::perf_context` symbol references in **both** directions —
-  a one-sided check still passes when the two libraries are swapped.
+  finished archive. Its counter-name check is the one that reaches every target: perf-counter names
+  only reach `.rodata` through `PerfContext::ToString()`, which `NPERF_CONTEXT` compiles away, so
+  searching the archived library for `user_key_comparison_count` separates the variants with no
+  toolchain and no matching architecture. A control string present in both guards the search itself,
+  because a search that silently matched nothing would pass every absence check. The `nm` check adds
+  a second, independent reading on the eight non-Windows targets. Both are asserted in **both**
+  directions: a one-sided check still passes when the two libraries are swapped.
 - `tools/perf-context-probe` links each archived library in turn and asserts
   `user_key_comparison_count` is non-zero for the enabled one and zero for the disabled one. The
   matrix's `run_probe` is false exactly where the runner cannot execute the target's binaries
-  (`darwin-x64`, both `windows-arm64` targets); those targets rely on the portfile and symbol checks.
+  (`darwin-x64`, both `windows-arm64` targets).

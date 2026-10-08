@@ -1,9 +1,6 @@
 // Decides which PerfContext variant a packaged RocksDB library is, by using it.
 //
 // Usage: perf-context-probe <enabled|disabled> <scratch dir>
-//
-// A symbol scan cannot run on the cross-compiled Windows targets and proves only that a name is
-// absent; this asserts the consumer-visible behaviour that the name's absence is supposed to mean.
 
 #include <cstdint>
 #include <cstdio>
@@ -56,13 +53,13 @@ int main(int argc, char** argv) {
     }
   }
 
-  // Counting is off by default at kDisable, and a stale count would make the disabled case pass for
-  // the wrong reason, so the window being measured starts from an explicit level and a reset.
+  // Without an explicit level and reset, the disabled expectation could pass because counting was
+  // off or because the window was empty, rather than because the counters are compiled out.
   rocksdb::SetPerfLevel(rocksdb::PerfLevel::kEnableCount);
   rocksdb::get_perf_context()->Reset();
 
-  // Memtable lookups and an iteration both compare user keys, so an instrumented build cannot leave
-  // the counter at zero here.
+  // Point lookups and an iteration both compare user keys, so an instrumented build cannot leave
+  // the counter at zero.
   std::string value;
   for (int i = 0; i < kKeyCount; ++i) {
     status = db->Get(rocksdb::ReadOptions(), Key(i), &value);
