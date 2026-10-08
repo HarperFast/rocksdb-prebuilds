@@ -442,33 +442,45 @@ jobs:
           - runner: macos-latest
             target: darwin-arm64
             triplet: arm64-osx-static
+            run_probe: true
           - runner: macos-latest
             target: darwin-x64
             triplet: x64-osx-static
+            run_probe: false
           - runner: ubuntu-22.04
             target: linux-x64-glibc
             triplet: x64-linux
+            run_probe: true
           - runner: ubuntu-22.04-arm
             target: linux-arm64-glibc
             triplet: arm64-linux
+            run_probe: true
           - runner: ubuntu-latest
             target: linux-x64-musl
             triplet: x64-linux-musl-static
+            run_probe: true
           - runner: ubuntu-24.04-arm
             target: linux-arm64-musl
             triplet: arm64-linux-musl-static
+            run_probe: true
           - runner: windows-latest
             target: windows-x64
             triplet: x64-windows-static
+            run_probe: true
+            probe_cmake_args: -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
           - runner: windows-latest
             target: windows-x64-static-md
             triplet: x64-windows-static-md
+            run_probe: true
+            probe_cmake_args: -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL
           - runner: windows-latest
             target: windows-arm64
             triplet: arm64-windows-static
+            run_probe: false
           - runner: windows-latest
             target: windows-arm64-static-md
             triplet: arm64-windows-static-md
+            run_probe: false
     runs-on: ${{ matrix.platform.runner }}
     env:
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
@@ -515,7 +527,7 @@ jobs:
 
       - name: Build RocksDB (macos/linux glibc/windows)
         if: ${{ matrix.platform.target != 'linux-x64-musl' && matrix.platform.target != 'linux-arm64-musl' }}
-        timeout-minutes: 60
+        timeout-minutes: 120
         env:
           ROCKSDB_DIR: ${{ github.workspace }}/rocksdb-${{ needs.check.outputs.version }}
           VCPKG_ROOT: ${{ github.workspace }}/vcpkg
@@ -546,28 +558,10 @@ jobs:
           export REAL_VCPKG_ROOT=$VCPKG_ROOT
           export VCPKG_KEEP_ENV_VARS="REAL_VCPKG_ROOT;ROCKSDB_DIR;VCPKG_CMD;VCPKG_ROOT;VCPKG_TRIPLET"
 
-          if ! $VCPKG_CMD install rocksdb \
-            --debug \
-            --triplet ${{ matrix.platform.triplet }} \
-            --overlay-ports="${GITHUB_WORKSPACE}/vcpkg-overlays" \
-            --overlay-triplets="${GITHUB_WORKSPACE}/vcpkg-triplets"; then
-            echo '=== Build failed, dumping logs ==='
-            echo '=== buildtrees/detect_compiler/config-${{ matrix.platform.triplet }}-out.log ==='
-            cat ${GITHUB_WORKSPACE}/vcpkg/buildtrees/detect_compiler/config-${{ matrix.platform.triplet }}-out.log 2>/dev/null || echo 'Log file not found'
-            echo '=== buildtrees/detect_compiler/config-${{ matrix.platform.triplet }}-rel-CMakeCache.txt.log ==='
-            cat ${GITHUB_WORKSPACE}/vcpkg/buildtrees/detect_compiler/config-${{ matrix.platform.triplet }}-rel-CMakeCache.txt.log 2>/dev/null || echo 'Log file not found'
-            echo '=== buildtrees/rocksdb/config-${{ matrix.platform.triplet }}-out.log ==='
-            cat ${GITHUB_WORKSPACE}/vcpkg/buildtrees/rocksdb/config-${{ matrix.platform.triplet }}-out.log 2>/dev/null || echo 'Log file not found'
-            echo '=== buildtrees/rocksdb/config-${{ matrix.platform.triplet }}-err.log ==='
-            cat ${GITHUB_WORKSPACE}/vcpkg/buildtrees/rocksdb/config-${{ matrix.platform.triplet }}-err.log 2>/dev/null || echo 'Log file not found'
-            echo '=== buildtrees/rocksdb/install-${{ matrix.platform.triplet }}-dbg-out.log ==='
-            cat ${GITHUB_WORKSPACE}/vcpkg/buildtrees/rocksdb/install-${{ matrix.platform.triplet }}-dbg-out.log 2>/dev/null || echo 'Log file not found'
-            echo '=== buildtrees/rocksdb/install-${{ matrix.platform.triplet }}-dbg-err.log ==='
-            cat ${GITHUB_WORKSPACE}/vcpkg/buildtrees/rocksdb/install-${{ matrix.platform.triplet }}-dbg-err.log 2>/dev/null || echo 'Log file not found'
-            exit 1
-          fi
-
-          cp -r "$VCPKG_ROOT/installed/${{ matrix.platform.triplet }}"/* "${GITHUB_WORKSPACE}/dist/"
+          export VCPKG_CMD
+          export WORKSPACE="$GITHUB_WORKSPACE"
+          export VCPKG_INSTALL_EXTRA_ARGS=--debug
+          bash "${GITHUB_WORKSPACE}/.github/scripts/build-rocksdb-variants.sh"
 
       - name: Build RocksDB (linux musl)
         if: ${{ matrix.platform.target == 'linux-x64-musl' || matrix.platform.target == 'linux-arm64-musl' }}
@@ -577,6 +571,11 @@ jobs:
             -v "${{ github.workspace }}:/workspace" \
             -e "ROCKSDB_DIR=/workspace/rocksdb-${{ needs.check.outputs.version }}" \
             -e VCPKG_FORCE_SYSTEM_BINARIES=1 \
+            -e WORKSPACE=/workspace \
+            -e VCPKG_ROOT=/workspace/vcpkg \
+            -e REAL_VCPKG_ROOT=/workspace/vcpkg \
+            -e VCPKG_CMD=/workspace/vcpkg/vcpkg \
+            -e "VCPKG_TRIPLET=${{ matrix.platform.triplet }}" \
             -w /workspace \
             alpine:latest \
             sh -c "
@@ -591,6 +590,7 @@ jobs:
 
               echo \"=== Installing packages ===\"
               apk add --no-cache \
+                bash \
                 build-base \
                 cmake \
                 curl \
@@ -607,20 +607,7 @@ jobs:
               echo \"=== vcpkg directory after ===\"
               find /workspace/vcpkg/downloads || true
 
-              echo \"=== Installing RocksDB ===\"
-              if ! /workspace/vcpkg/vcpkg install rocksdb \
-                --triplet ${{ matrix.platform.triplet }} \
-                --overlay-ports=/workspace/vcpkg-overlays \
-                --overlay-triplets=/workspace/vcpkg-triplets; then
-                echo '=== Build failed, dumping logs ==='
-                echo '=== install-${{ matrix.platform.triplet }}-dbg-out.log ==='
-                cat /workspace/vcpkg/buildtrees/rocksdb/install-${{ matrix.platform.triplet }}-dbg-out.log 2>/dev/null || echo 'Log file not found'
-                echo '=== install-${{ matrix.platform.triplet }}-dbg-err.log ==='
-                cat /workspace/vcpkg/buildtrees/rocksdb/install-${{ matrix.platform.triplet }}-dbg-err.log 2>/dev/null || echo 'Log file not found'
-                exit 1
-              fi
-
-              cp -r /workspace/vcpkg/installed/${{ matrix.platform.triplet }}/* /workspace/dist/
+              bash /workspace/.github/scripts/build-rocksdb-variants.sh
             "
 
       - name: Verify LZ4 is packaged
@@ -640,6 +627,38 @@ jobs:
           cd "${GITHUB_WORKSPACE}/dist"
           tar -cf - . | xz -9 > $ARCHIVE
           echo "archive=$ARCHIVE" >> $GITHUB_OUTPUT
+
+      - name: Verify release archive
+        if: ${{ matrix.platform.target != 'linux-x64-musl' && matrix.platform.target != 'linux-arm64-musl' }}
+        shell: bash
+        env:
+          ARCHIVE: ${{ steps.archive.outputs.archive }}
+          SCRATCH: ${{ github.workspace }}/archive-check
+          PROBE_DIR: ${{ github.workspace }}/tools/perf-context-probe
+          RUN_PROBE: ${{ matrix.platform.run_probe }}
+          PROBE_CMAKE_ARGS: ${{ matrix.platform.probe_cmake_args }}
+        run: bash "${GITHUB_WORKSPACE}/.github/scripts/verify-prebuild-archive.sh"
+
+      # musl binaries cannot run on the glibc runner, so the archive is verified where it was built.
+      - name: Verify release archive (linux musl)
+        if: ${{ matrix.platform.target == 'linux-x64-musl' || matrix.platform.target == 'linux-arm64-musl' }}
+        shell: bash
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" \
+            -e "ARCHIVE=/workspace/rocksdb-${{ needs.check.outputs.release_version }}-${{ matrix.platform.target }}.tar.xz" \
+            -e SCRATCH=/workspace/archive-check \
+            -e PROBE_DIR=/workspace/tools/perf-context-probe \
+            -e "RUN_PROBE=${{ matrix.platform.run_probe }}" \
+            -w /workspace \
+            alpine:latest \
+            sh -c "
+              set -e
+              # grep: the verifier counts markers in a static library, and BusyBox grep does not
+              # handle binary input or -o counting dependably.
+              apk add --no-cache bash binutils build-base cmake grep ninja xz
+              bash /workspace/.github/scripts/verify-prebuild-archive.sh
+            "
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
@@ -684,11 +703,12 @@ jobs:
           TAG_NAME="v$RELEASE_VERSION"
           OWNER_MARKER="<!-- rocksdb-prebuilds-owner:$GITHUB_RUN_ID -->"
           COMPLETE_MARKER="<!-- rocksdb-prebuilds-complete -->"
-          RELEASE_BODY="$(printf '%s\n\n%s\n\n%s\n\n%s\n\n%s' \
+          RELEASE_BODY="$(printf '%s\n\n%s\n\n%s\n\n%s\n\n%s\n\n%s' \
             "Automated prebuilds for RocksDB v$RELEASE_VERSION." \
             "$MISMATCH_NOTE" \
             "$EXPERIMENTAL_NOTE" \
             "Built from upstream tag v$ROCKSDB_VERSION — release notes: https://github.com/facebook/rocksdb/releases/tag/v$ROCKSDB_VERSION" \
+            "Each archive contains two builds of RocksDB from the same source, patches and configuration, differing only in \`WITH_PERF_CONTEXT\`. \`lib/librocksdb.a\` (\`lib/rocksdb.lib\` on Windows) has PerfContext enabled, as every previous release did. \`lib/no-perf-context/librocksdb.a\` (\`lib/no-perf-context/rocksdb.lib\`) has it compiled out (\`NPERF_CONTEXT\`): linking it drops the thread-local counter update on every key comparison, and in exchange \`get_perf_context()\` counters stay zero and the \`rocksdb.db.mutex.wait.micros\` statistic is never recorded. The public headers, the dependency libraries and the CMake and pkg-config packages are shared by both, and describe the enabled library." \
             "$OWNER_MARKER")"
 
           get_releases() {
