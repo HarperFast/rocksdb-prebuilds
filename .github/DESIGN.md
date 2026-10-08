@@ -34,9 +34,12 @@ detail.
 - `.github/scripts/verify-prebuild-archive.sh` re-checks all of that from a fresh extraction of the
   finished archive. Its counter-name check is the one that reaches every target: perf-counter names
   only reach `.rodata` through `PerfContext::ToString()`, which `NPERF_CONTEXT` compiles away, so
-  searching the archived library for `user_key_comparison_count` separates the variants with no
-  toolchain and no matching architecture. A control string present in both guards the search itself,
-  because a search that silently matched nothing would pass every absence check. The `nm` check adds
+  counting `user_key_comparison_count` in the archived library separates the variants with no
+  toolchain and no matching architecture. It is a comparison, not a presence test, because the same
+  name is a `PerfContextBase` field and vcpkg compiles release objects with `/Z7`, so on Windows it
+  also reaches the archive as CodeView type info — identically for both variants, which is what
+  leaves the literal as the enabled library's margin. A control string present in both guards the
+  search itself, because a search that silently matched nothing would pass as an absence. The `nm` check adds
   a second, independent reading on the eight non-Windows targets. Both are asserted in **both**
   directions: a one-sided check still passes when the two libraries are swapped.
 - `tools/perf-context-probe` links each archived library in turn and asserts

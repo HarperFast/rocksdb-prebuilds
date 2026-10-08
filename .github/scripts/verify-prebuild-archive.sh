@@ -16,8 +16,12 @@ set -euo pipefail
 readonly VARIANT_SUBDIR="no-perf-context"
 readonly PREFIX="${SCRATCH}/extracted"
 
-# Only PerfContext::ToString() puts a counter name in .rodata, and NPERF_CONTEXT compiles it away.
-# The control is an unrelated statistics name, present whatever the variant.
+# Only PerfContext::ToString() puts a counter name in .rodata, and NPERF_CONTEXT compiles it away —
+# but the same name is also a PerfContextBase field, and vcpkg compiles release objects with /Z7, so
+# on Windows it also reaches the archive as CodeView type info. Both variants declare that struct
+# identically, so the literal is what makes the enabled library's count strictly the larger one;
+# presence alone would fail every Windows target. The control is an unrelated statistics name,
+# present whatever the variant, so a search that silently matched nothing cannot pass as an absence.
 readonly PERF_MARKER="user_key_comparison_count"
 readonly CONTROL_MARKER="rocksdb.db.get.micros"
 
@@ -32,14 +36,19 @@ sha256() {
 }
 
 # grep exits 1 for "no match" and 2 or more for a real failure; a failure read as "no match" would
-# turn every absence check below into an unconditional pass.
+# turn every count below into a passing zero.
 MATCH_COUNT=0
 count_matches() {
-  local rc=0
-  MATCH_COUNT="$(LC_ALL=C grep -a -c -F -- "$1" "$2")" || rc=$?
+  local rc=0 matches
+  matches="$(LC_ALL=C grep -o -a -F -- "$1" "$2")" || rc=$?
   if (( rc > 1 )); then
     echo "::error::Could not search ${2##*/} for '$1' (grep exit $rc)" >&2
     exit 1
+  fi
+  if (( rc == 1 )); then
+    MATCH_COUNT=0
+  else
+    MATCH_COUNT="$(printf '%s\n' "$matches" | wc -l | tr -d '[:space:]')"
   fi
 }
 
@@ -93,9 +102,7 @@ if [[ "$VARIANT_ENTRIES" != "1" ]]; then
 fi
 echo "lib/${LIB_NAME} and lib/${VARIANT_SUBDIR}/${LIB_NAME} are both present and distinct"
 
-# The only variant check needing no toolchain and no matching architecture, so it is the one the
-# cross-compiled targets rest on. Asserted in both directions: a one-sided check still passes when
-# the two libraries have been swapped.
+# Asserted in both directions: a one-sided check still passes when the two libraries are swapped.
 echo "=== PerfContext counter names ==="
 for lib in "$ENABLED_LIB" "$DISABLED_LIB"; do
   count_matches "$CONTROL_MARKER" "$lib"
@@ -108,13 +115,13 @@ count_matches "$PERF_MARKER" "$ENABLED_LIB"
 readonly ENABLED_MARKERS="$MATCH_COUNT"
 count_matches "$PERF_MARKER" "$DISABLED_LIB"
 readonly DISABLED_MARKERS="$MATCH_COUNT"
-echo "lib/${LIB_NAME}: $ENABLED_MARKERS match(es); lib/${VARIANT_SUBDIR}/${LIB_NAME}: $DISABLED_MARKERS"
+echo "'$PERF_MARKER' in lib/${LIB_NAME}: $ENABLED_MARKERS; in lib/${VARIANT_SUBDIR}/${LIB_NAME}: $DISABLED_MARKERS"
 if [[ "$ENABLED_MARKERS" -eq 0 ]]; then
   echo "::error::lib/${LIB_NAME} does not contain '$PERF_MARKER'; the default path is not the PerfContext-enabled library" >&2
   exit 1
 fi
-if [[ "$DISABLED_MARKERS" -ne 0 ]]; then
-  echo "::error::lib/${VARIANT_SUBDIR}/${LIB_NAME} contains '$PERF_MARKER'; WITH_PERF_CONTEXT=OFF did not reach the compiler" >&2
+if [[ "$ENABLED_MARKERS" -le "$DISABLED_MARKERS" ]]; then
+  echo "::error::lib/${VARIANT_SUBDIR}/${LIB_NAME} contains '$PERF_MARKER' at least as often ($DISABLED_MARKERS) as lib/${LIB_NAME} ($ENABLED_MARKERS); WITH_PERF_CONTEXT=OFF did not reach the compiler, or the two libraries are the wrong way round" >&2
   exit 1
 fi
 

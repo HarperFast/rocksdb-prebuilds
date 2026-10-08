@@ -58,8 +58,7 @@ sha256() {
   fi
 }
 
-# Enabled first: it is what the historical dist/lib path must hold, and its dependency builds are
-# what the second install reuses instead of rebuilding.
+# Enabled first: its dependency builds are what the second install reuses instead of rebuilding.
 echo "=== Installing RocksDB (PerfContext enabled) ==="
 install_rocksdb rocksdb
 
@@ -79,8 +78,8 @@ readonly ENABLED_LIB="${DIST}/lib/${LIB_NAME}"
 ENABLED_SHA="$(sha256 "$ENABLED_LIB")"
 readonly ENABLED_SHA
 
-# In place rather than a second install root: the dependencies stay installed, and dist/ above is
-# now the only copy of the enabled tree, which is what the header comparison needs.
+# In place rather than a second install root: the dependencies stay installed, and dist/ above
+# remains the only copy of the enabled tree for the header comparison.
 echo "=== Installing RocksDB (PerfContext disabled) ==="
 install_rocksdb "rocksdb[${VARIANT_SUBDIR}]" --recurse
 

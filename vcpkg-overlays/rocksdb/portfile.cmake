@@ -85,7 +85,7 @@ endif()
 set(nperf_context_defined FALSE)
 foreach(build_system_file IN LISTS build_system_files)
   file(STRINGS "${build_system_file}" nperf_context_lines LIMIT_COUNT 1
-    REGEX "[-/]D *NPERF_CONTEXT|PreprocessorDefinitions.*NPERF_CONTEXT")
+    REGEX "([-/]D *|PreprocessorDefinitions[^\n]*[=;>\"])NPERF_CONTEXT([^A-Za-z0-9_]|$)")
   if(nperf_context_lines)
     set(nperf_context_defined TRUE)
     break()
