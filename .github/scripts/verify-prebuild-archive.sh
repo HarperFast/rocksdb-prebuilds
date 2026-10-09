@@ -27,9 +27,9 @@ if [[ -z "${ARCHIVE:-}" ]]; then
   exit 2
 fi
 
-# GITHUB_WORKSPACE is a backslash path on Windows runners, which tar cannot open and CMake reads as
-# escapes in a -D value. Converting on entry, before anything reads these paths, keeps every later
-# use - including the checks just below - on one spelling.
+# GITHUB_WORKSPACE is a backslash path on Windows runners. tar refused one as its -C directory, and
+# CMake reads backslashes in a -D value as escapes. Converting on entry keeps every later reader -
+# xz, tar, CMake and the checks just below - on one spelling.
 to_unix_path() { printf '%s' "${1//\\//}"; }
 ARCHIVE="$(to_unix_path "$ARCHIVE")"
 
