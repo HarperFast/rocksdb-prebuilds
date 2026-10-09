@@ -192,8 +192,7 @@ if [[ "$RUN_PROBE" != "true" ]]; then
 fi
 
 # This step has no Visual Studio developer prompt, so CMake's default generator search can land on
-# NMake Makefiles and fail with no compiler. vswhere says which Visual Studio is installed and CMake
-# says what it calls that one, so neither name is written down here.
+# NMake Makefiles and fail with no compiler.
 GENERATOR_ARGS=()
 if [[ "$windows_paths" == true ]]; then
   vswhere="/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
