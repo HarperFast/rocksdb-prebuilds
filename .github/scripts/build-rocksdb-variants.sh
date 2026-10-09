@@ -102,10 +102,8 @@ sha256() {
 # vcpkg treats an installed superset as satisfying the request, so `install rocksdb` against a tree
 # that already holds rocksdb[no-perf-context] is a no-op and would stage the disabled library at the
 # enabled path. CI clones vcpkg per job and never sees that; a re-run or a warm tree does.
-# Asking disk rather than vcpkg keeps a fresh tree, which has nothing to remove, from spending a
-# whole vcpkg invocation to say so. find takes the directory as an operand, so a Windows-spelled
-# VCPKG_ROOT reaches the filesystem instead of a glob that would read its backslashes as escapes.
-# A wrong answer here is caught later: the staged libraries must differ.
+# A fresh tree has nothing to remove, so ask disk rather than spend a vcpkg invocation saying so.
+# find takes the directory as an operand; a glob reads a Windows VCPKG_ROOT's backslashes as escapes.
 installed_rocksdb="$(find "${VCPKG_ROOT}/installed/vcpkg/info" -maxdepth 1 \
   -name "rocksdb_*_${VCPKG_TRIPLET}.list" 2>/dev/null || true)"
 if [[ -n "$installed_rocksdb" ]]; then
