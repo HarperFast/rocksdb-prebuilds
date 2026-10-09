@@ -16,7 +16,8 @@ Optional:
   SCRATCH           working directory for the extraction and probe build (default: a new temp dir)
   PROBE_DIR         tools/perf-context-probe (default: derived from this script's location)
   RUN_PROBE         true (default) to compile and run the probe; false for a cross-compiled target
-  PROBE_CMAKE_ARGS  whitespace-separated extra CMake arguments (MSVC runtime selection)
+  PROBE_CMAKE_ARGS  whitespace-separated extra CMake arguments (MSVC runtime selection).
+                    Spell any path value with forward slashes; these are passed through as given.
 USAGE
 }
 
@@ -26,6 +27,19 @@ if [[ -z "${ARCHIVE:-}" ]]; then
   usage
   exit 2
 fi
+
+# GITHUB_WORKSPACE is a backslash path on Windows runners; tar rejects one as its -C directory and
+# CMake reads the backslashes in a -D value as escapes. On every other shell a backslash is an
+# ordinary filename character, so rewrite only here, and ahead of each path's first reader.
+windows_paths=false
+case "${OSTYPE:-$(uname -s)}" in
+  msys* | cygwin* | win32 | MINGW* | MSYS* | CYGWIN*) windows_paths=true ;;
+esac
+
+if [[ "$windows_paths" == true ]]; then
+  ARCHIVE="${ARCHIVE//\\//}"
+fi
+
 if [[ ! -f "$ARCHIVE" ]]; then
   echo "verify-prebuild-archive.sh: no such archive: $ARCHIVE" >&2
   exit 2
@@ -37,6 +51,10 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -z "${SCRATCH:-}" ]]; then
   SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/rocksdb-archive-check.XXXXXX")"
   echo "Extracting and probing under $SCRATCH"
+fi
+if [[ "$windows_paths" == true ]]; then
+  PROBE_DIR="${PROBE_DIR//\\//}"
+  SCRATCH="${SCRATCH//\\//}"
 fi
 
 readonly VARIANT_SUBDIR="no-perf-context"
@@ -174,20 +192,16 @@ if [[ "$RUN_PROBE" != "true" ]]; then
 fi
 
 echo "=== Behavioural probe ==="
-# GITHUB_WORKSPACE is a backslash path on Windows runners, and CMake reads backslashes in a -D value
-# as string escapes.
-cmake_path() { printf '%s' "${1//\\//}"; }
-
 run_probe() {
   local name="$1" expectation="$2" build_dir="${SCRATCH}/probe-$1"
   shift 2
 
-  cmake -S "$(cmake_path "$PROBE_DIR")" -B "$(cmake_path "$build_dir")" \
+  cmake -S "$PROBE_DIR" -B "$build_dir" \
     -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_PREFIX_PATH="$(cmake_path "$PREFIX")" \
+    -DCMAKE_PREFIX_PATH="$PREFIX" \
     ${EXTRA_CMAKE_ARGS[@]+"${EXTRA_CMAKE_ARGS[@]}"} \
     "$@"
-  cmake --build "$(cmake_path "$build_dir")" --config Release
+  cmake --build "$build_dir" --config Release
 
   # Single-config generators put it at the top of the build dir, multi-config ones under Release/.
   local exe="" candidate
@@ -209,5 +223,5 @@ run_probe() {
 }
 
 run_probe enabled enabled
-run_probe disabled disabled -DROCKSDB_LIBRARY_OVERRIDE="$(cmake_path "$DISABLED_LIB")"
+run_probe disabled disabled -DROCKSDB_LIBRARY_OVERRIDE="$DISABLED_LIB"
 echo "Both archived libraries behave as their path claims"

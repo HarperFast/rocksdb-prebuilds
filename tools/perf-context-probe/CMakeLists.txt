@@ -1,7 +1,9 @@
 cmake_minimum_required(VERSION 3.20)
 project(perf-context-probe CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+# RocksDB's installed headers require C++20 and the package exports no
+# target_compile_features to say so.
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(RocksDB CONFIG REQUIRED)
