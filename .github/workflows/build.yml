@@ -628,8 +628,7 @@ jobs:
           tar -cf - . | xz -9 > $ARCHIVE
           echo "archive=$ARCHIVE" >> $GITHUB_OUTPUT
 
-      # The probe needs a newer CMake than the build's pinned 3.31.10, which has no generator for
-      # the Visual Studio this image ships.
+      # Separate from the build's 3.31.10, which has no generator for the VS this image ships.
       - name: Install a CMake that knows the installed Visual Studio (probe only)
         if: ${{ startsWith(matrix.platform.target, 'windows-') && matrix.platform.run_probe }}
         uses: lukka/get-cmake@a89e43e22a96abafcd7a62db652a65ecd33052c9 # latest as of 2026-10-04
