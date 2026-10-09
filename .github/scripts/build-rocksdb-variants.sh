@@ -55,6 +55,11 @@ fi
 
 read -ra EXTRA_VCPKG_ARGS <<< "${VCPKG_INSTALL_EXTRA_ARGS:-}" || true
 
+# vcpkg forks a telemetry uploader as it exits, and that child inherits the lock on the installed
+# tree. Back-to-back vcpkg runs then fail with "another vcpkg may be running against the same
+# directory" rather than waiting for it.
+export VCPKG_DISABLE_METRICS=1
+
 readonly INSTALLED="${VCPKG_ROOT}/installed/${VCPKG_TRIPLET}"
 readonly DIST="${WORKSPACE}/dist"
 readonly VARIANT_SUBDIR="no-perf-context"
@@ -98,11 +103,19 @@ sha256() {
 # vcpkg treats an installed superset as satisfying the request, so `install rocksdb` against a tree
 # that already holds rocksdb[no-perf-context] is a no-op and would stage the disabled library at the
 # enabled path. CI clones vcpkg per job and never sees that; a re-run or a warm tree does.
-echo "=== Removing any previously installed RocksDB ==="
-"$VCPKG_CMD" remove rocksdb \
-  --triplet "$VCPKG_TRIPLET" \
-  --overlay-ports="${WORKSPACE}/vcpkg-overlays" \
-  --overlay-triplets="${WORKSPACE}/vcpkg-triplets" || true
+#
+# The installed list is read from disk rather than from `vcpkg remove`, which on a tree with nothing
+# to remove returns in milliseconds and leaves the next vcpkg waiting on a lock its own exiting
+# telemetry child still holds.
+if compgen -G "${VCPKG_ROOT}/installed/vcpkg/info/rocksdb_*_${VCPKG_TRIPLET}.list" >/dev/null; then
+  echo "=== Removing previously installed RocksDB ==="
+  "$VCPKG_CMD" remove rocksdb \
+    --triplet "$VCPKG_TRIPLET" \
+    --overlay-ports="${WORKSPACE}/vcpkg-overlays" \
+    --overlay-triplets="${WORKSPACE}/vcpkg-triplets" || true
+else
+  echo "=== No previously installed RocksDB to remove ==="
+fi
 
 # Enabled first: its dependency builds are what the second install reuses instead of rebuilding.
 echo "=== Installing RocksDB (PerfContext enabled) ==="
