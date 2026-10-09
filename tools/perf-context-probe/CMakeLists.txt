@@ -1,7 +1,10 @@
 cmake_minimum_required(VERSION 3.20)
 project(perf-context-probe CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+# RocksDB builds itself at C++20 and its installed headers use C++20 constructs, but it exports no
+# target_compile_features, so a consumer has to ask for the standard itself. AppleClang accepts those
+# headers at 17; GCC and MSVC reject them.
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(RocksDB CONFIG REQUIRED)

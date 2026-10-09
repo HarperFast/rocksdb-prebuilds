@@ -31,6 +31,12 @@ if [[ ! -f "$ARCHIVE" ]]; then
   exit 2
 fi
 
+# GITHUB_WORKSPACE is a backslash path on Windows runners. tar cannot open one, and CMake reads
+# backslashes in a -D value as escapes, so every path this script hands to another tool is converted
+# once here rather than at each use.
+to_unix_path() { printf '%s' "${1//\\//}"; }
+ARCHIVE="$(to_unix_path "$ARCHIVE")"
+
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 : "${PROBE_DIR:=$(cd "${script_dir}/../.." && pwd)/tools/perf-context-probe}"
 : "${RUN_PROBE:=true}"
@@ -38,6 +44,8 @@ if [[ -z "${SCRATCH:-}" ]]; then
   SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/rocksdb-archive-check.XXXXXX")"
   echo "Extracting and probing under $SCRATCH"
 fi
+PROBE_DIR="$(to_unix_path "$PROBE_DIR")"
+SCRATCH="$(to_unix_path "$SCRATCH")"
 
 readonly VARIANT_SUBDIR="no-perf-context"
 readonly PREFIX="${SCRATCH}/extracted"
@@ -174,20 +182,16 @@ if [[ "$RUN_PROBE" != "true" ]]; then
 fi
 
 echo "=== Behavioural probe ==="
-# GITHUB_WORKSPACE is a backslash path on Windows runners, and CMake reads backslashes in a -D value
-# as string escapes.
-cmake_path() { printf '%s' "${1//\\//}"; }
-
 run_probe() {
   local name="$1" expectation="$2" build_dir="${SCRATCH}/probe-$1"
   shift 2
 
-  cmake -S "$(cmake_path "$PROBE_DIR")" -B "$(cmake_path "$build_dir")" \
+  cmake -S "$PROBE_DIR" -B "$build_dir" \
     -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_PREFIX_PATH="$(cmake_path "$PREFIX")" \
+    -DCMAKE_PREFIX_PATH="$PREFIX" \
     ${EXTRA_CMAKE_ARGS[@]+"${EXTRA_CMAKE_ARGS[@]}"} \
     "$@"
-  cmake --build "$(cmake_path "$build_dir")" --config Release
+  cmake --build "$build_dir" --config Release
 
   # Single-config generators put it at the top of the build dir, multi-config ones under Release/.
   local exe="" candidate
@@ -209,5 +213,5 @@ run_probe() {
 }
 
 run_probe enabled enabled
-run_probe disabled disabled -DROCKSDB_LIBRARY_OVERRIDE="$(cmake_path "$DISABLED_LIB")"
+run_probe disabled disabled -DROCKSDB_LIBRARY_OVERRIDE="$DISABLED_LIB"
 echo "Both archived libraries behave as their path claims"
