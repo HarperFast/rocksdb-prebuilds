@@ -27,9 +27,8 @@ if [[ -z "${ARCHIVE:-}" ]]; then
   exit 2
 fi
 
-# GITHUB_WORKSPACE is a backslash path on Windows runners. tar refused one as its -C directory, and
-# CMake reads backslashes in a -D value as escapes. Converting on entry keeps every later reader -
-# xz, tar, CMake and the checks just below - on one spelling.
+# GITHUB_WORKSPACE is a backslash path on Windows runners; tar rejects one as its -C directory and
+# CMake reads the backslashes in a -D value as escapes. Convert each path before its first use.
 ARCHIVE="${ARCHIVE//\\//}"
 
 if [[ ! -f "$ARCHIVE" ]]; then
