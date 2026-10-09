@@ -103,9 +103,14 @@ sha256() {
 # that already holds rocksdb[no-perf-context] is a no-op and would stage the disabled library at the
 # enabled path. CI clones vcpkg per job and never sees that; a re-run or a warm tree does.
 # A fresh tree has nothing to remove, so ask disk rather than spend a vcpkg invocation saying so.
-# find takes the directory as an operand; a glob reads a Windows VCPKG_ROOT's backslashes as escapes.
-installed_rocksdb="$(find "${VCPKG_ROOT}/installed/vcpkg/info" -maxdepth 1 \
-  -name "rocksdb_*_${VCPKG_TRIPLET}.list" 2>/dev/null || true)"
+# Backslashes are escapes to the glob, and `find` would resolve to System32's on a Windows runner.
+installed_rocksdb=""
+for candidate in "${VCPKG_ROOT//\\//}"/installed/vcpkg/info/rocksdb_*_"${VCPKG_TRIPLET}".list; do
+  if [[ -f "$candidate" ]]; then
+    installed_rocksdb="$candidate"
+    break
+  fi
+done
 if [[ -n "$installed_rocksdb" ]]; then
   echo "=== Removing previously installed RocksDB ==="
   "$VCPKG_CMD" remove rocksdb \
