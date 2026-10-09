@@ -484,6 +484,10 @@ jobs:
     runs-on: ${{ matrix.platform.runner }}
     env:
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+      # ECR Public mirrors Docker Hub's official images without Docker Hub's anonymous-pull token
+      # endpoint, whose timeouts failed both musl legs at once. Pinned so the musl toolchain changes
+      # only by a reviewed bump.
+      MUSL_IMAGE: public.ecr.aws/docker/library/alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -563,6 +567,17 @@ jobs:
           export VCPKG_INSTALL_EXTRA_ARGS=--debug
           bash "${GITHUB_WORKSPACE}/.github/scripts/build-rocksdb-variants.sh"
 
+      - name: Pull musl build image
+        if: ${{ matrix.platform.target == 'linux-x64-musl' || matrix.platform.target == 'linux-arm64-musl' }}
+        shell: bash
+        run: |
+          for attempt in 1 2 3 4 5; do
+            docker pull "$MUSL_IMAGE" && exit 0
+            echo "docker pull failed (attempt $attempt); retrying in $((attempt * 15))s"
+            sleep $((attempt * 15))
+          done
+          exit 1
+
       - name: Build RocksDB (linux musl)
         if: ${{ matrix.platform.target == 'linux-x64-musl' || matrix.platform.target == 'linux-arm64-musl' }}
         shell: bash
@@ -577,7 +592,7 @@ jobs:
             -e VCPKG_CMD=/workspace/vcpkg/vcpkg \
             -e "VCPKG_TRIPLET=${{ matrix.platform.triplet }}" \
             -w /workspace \
-            alpine:latest \
+            "$MUSL_IMAGE" \
             sh -c "
               set -e
               set -o pipefail
@@ -658,7 +673,7 @@ jobs:
             -e PROBE_DIR=/workspace/tools/perf-context-probe \
             -e "RUN_PROBE=${{ matrix.platform.run_probe }}" \
             -w /workspace \
-            alpine:latest \
+            "$MUSL_IMAGE" \
             sh -c "
               set -e
               # grep: the verifier counts markers in a static library, and BusyBox grep does not
