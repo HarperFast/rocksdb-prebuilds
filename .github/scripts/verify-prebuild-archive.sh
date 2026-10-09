@@ -29,7 +29,15 @@ fi
 
 # GITHUB_WORKSPACE is a backslash path on Windows runners; tar rejects one as its -C directory and
 # CMake reads the backslashes in a -D value as escapes. Convert each path before its first use.
-ARCHIVE="${ARCHIVE//\\//}"
+# Only where a backslash means a separator - elsewhere it is an ordinary filename character.
+windows_paths=false
+case "${OSTYPE:-$(uname -s)}" in
+  msys* | cygwin* | win32 | MINGW* | MSYS* | CYGWIN*) windows_paths=true ;;
+esac
+
+if [[ "$windows_paths" == true ]]; then
+  ARCHIVE="${ARCHIVE//\\//}"
+fi
 
 if [[ ! -f "$ARCHIVE" ]]; then
   echo "verify-prebuild-archive.sh: no such archive: $ARCHIVE" >&2
@@ -43,8 +51,10 @@ if [[ -z "${SCRATCH:-}" ]]; then
   SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/rocksdb-archive-check.XXXXXX")"
   echo "Extracting and probing under $SCRATCH"
 fi
-PROBE_DIR="${PROBE_DIR//\\//}"
-SCRATCH="${SCRATCH//\\//}"
+if [[ "$windows_paths" == true ]]; then
+  PROBE_DIR="${PROBE_DIR//\\//}"
+  SCRATCH="${SCRATCH//\\//}"
+fi
 
 readonly VARIANT_SUBDIR="no-perf-context"
 readonly PREFIX="${SCRATCH}/extracted"
