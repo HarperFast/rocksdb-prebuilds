@@ -34,8 +34,10 @@ only the RocksDB library:
 ```
 
 With CMake, `find_package(RocksDB CONFIG)` resolves the **enabled** library, because the archive
-ships one CMake package and it describes `lib/`. To take the other one, override the imported
-target's location after importing it:
+ships one CMake package and it describes `lib/`. The package resolves its own zlib, including the
+`zs.lib` that vcpkg installs on Windows, so no `ZLIB_USE_STATIC_LIBS` or other preparation is needed
+on any target. To take the other library, override the imported target's location after importing
+it:
 
 ```cmake
 find_package(RocksDB CONFIG REQUIRED)
