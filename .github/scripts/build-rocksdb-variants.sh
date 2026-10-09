@@ -56,8 +56,7 @@ fi
 read -ra EXTRA_VCPKG_ARGS <<< "${VCPKG_INSTALL_EXTRA_ARGS:-}" || true
 
 # vcpkg forks a telemetry uploader as it exits, and that child inherits the lock on the installed
-# tree. Back-to-back vcpkg runs then fail with "another vcpkg may be running against the same
-# directory" rather than waiting for it.
+# tree, which the next vcpkg reports as another vcpkg running rather than waiting for.
 export VCPKG_DISABLE_METRICS=1
 
 readonly INSTALLED="${VCPKG_ROOT}/installed/${VCPKG_TRIPLET}"
@@ -103,11 +102,13 @@ sha256() {
 # vcpkg treats an installed superset as satisfying the request, so `install rocksdb` against a tree
 # that already holds rocksdb[no-perf-context] is a no-op and would stage the disabled library at the
 # enabled path. CI clones vcpkg per job and never sees that; a re-run or a warm tree does.
-#
-# The installed list is read from disk rather than from `vcpkg remove`, which on a tree with nothing
-# to remove returns in milliseconds and leaves the next vcpkg waiting on a lock its own exiting
-# telemetry child still holds.
-if compgen -G "${VCPKG_ROOT}/installed/vcpkg/info/rocksdb_*_${VCPKG_TRIPLET}.list" >/dev/null; then
+# Asking disk rather than vcpkg keeps a fresh tree, which has nothing to remove, from spending a
+# whole vcpkg invocation to say so. find takes the directory as an operand, so a Windows-spelled
+# VCPKG_ROOT reaches the filesystem instead of a glob that would read its backslashes as escapes.
+# A wrong answer here is caught later: the staged libraries must differ.
+installed_rocksdb="$(find "${VCPKG_ROOT}/installed/vcpkg/info" -maxdepth 1 \
+  -name "rocksdb_*_${VCPKG_TRIPLET}.list" 2>/dev/null || true)"
+if [[ -n "$installed_rocksdb" ]]; then
   echo "=== Removing previously installed RocksDB ==="
   "$VCPKG_CMD" remove rocksdb \
     --triplet "$VCPKG_TRIPLET" \
