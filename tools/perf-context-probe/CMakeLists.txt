@@ -1,15 +1,10 @@
-# 3.24 for ZLIB_USE_STATIC_LIBS below.
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.20)
 project(perf-context-probe CXX)
 
 # RocksDB's installed headers require C++20 and the package exports no
 # target_compile_features to say so.
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-# RocksDBConfig resolves ZLIB in module mode, and FindZLIB searches the archived zs.lib only when
-# it knows the library is static.
-set(ZLIB_USE_STATIC_LIBS ON)
 
 find_package(RocksDB CONFIG REQUIRED)
 

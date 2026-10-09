@@ -103,6 +103,26 @@ vcpkg_cmake_install()
 
 vcpkg_cmake_config_fixup(CONFIG_PATH lib/cmake/rocksdb)
 
+# vcpkg installs the static zlib under a name FindZLIB searches only when it knows the library is
+# static (zs.lib on Windows), so the shipped package could not resolve its own dependency. Naming
+# the file is what vcpkg's own zlib wrapper does and needs no particular CMake version. MODULE is
+# required because RocksDBTargets links ZLIB::ZLIB, which only FindZLIB defines - the zlib package
+# installed beside it exports ZLIB::ZLIBSTATIC, so a consumer preferring config mode would
+# otherwise configure and then fail to link.
+set(rocksdb_config "${CURRENT_PACKAGES_DIR}/share/rocksdb/RocksDBConfig.cmake")
+file(READ "${rocksdb_config}" rocksdb_config_text)
+set(zlib_anchor "find_dependency(ZLIB)")
+string(FIND "${rocksdb_config_text}" "${zlib_anchor}" zlib_anchor_at)
+if(zlib_anchor_at EQUAL -1)
+  message(FATAL_ERROR "No ${zlib_anchor} in ${rocksdb_config}; the archived zlib would be unresolvable")
+endif()
+string(REPLACE "${zlib_anchor}" "if(NOT ZLIB_LIBRARY)
+    find_library(ZLIB_LIBRARY_RELEASE NAMES zs z PATHS \"\${PACKAGE_PREFIX_DIR}/lib\" NO_DEFAULT_PATH)
+    find_library(ZLIB_LIBRARY_DEBUG NAMES zsd zd z PATHS \"\${PACKAGE_PREFIX_DIR}/debug/lib\" NO_DEFAULT_PATH)
+  endif()
+  find_dependency(ZLIB MODULE)" rocksdb_config_text "${rocksdb_config_text}")
+file(WRITE "${rocksdb_config}" "${rocksdb_config_text}")
+
 vcpkg_copy_pdbs()
 
 file(REMOVE_RECURSE "${CURRENT_PACKAGES_DIR}/debug/include")

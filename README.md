@@ -34,21 +34,12 @@ only the RocksDB library:
 ```
 
 With CMake, `find_package(RocksDB CONFIG)` resolves the **enabled** library, because the archive
-ships one CMake package and it describes `lib/`. Set `ZLIB_USE_STATIC_LIBS` first (CMake 3.24 or
-newer): these archives carry only static libraries, and on Windows zlib is installed as `zs.lib`, a
-name `FindZLIB` looks for only when it knows the library is static. Without it, configuring fails
-with `Could NOT find ZLIB (missing: ZLIB_LIBRARY)` on all four Windows archives. On CMake older than
-3.24 the variable does nothing; name the library yourself instead, which `FindZLIB` accepts in place
-of its own search:
+ships one CMake package and it describes `lib/`. The package resolves its own zlib, including the
+`zs.lib` that vcpkg installs on Windows, so no `ZLIB_USE_STATIC_LIBS` or other preparation is needed
+on any target. To take the other library, override the imported target's location after importing
+it:
 
 ```cmake
-find_library(ZLIB_LIBRARY NAMES zs z PATHS "${prefix}/lib" NO_DEFAULT_PATH)
-```
-
-To take the other library, override the imported target's location after importing it:
-
-```cmake
-set(ZLIB_USE_STATIC_LIBS ON)
 find_package(RocksDB CONFIG REQUIRED)
 set_target_properties(RocksDB::rocksdb PROPERTIES
   IMPORTED_LOCATION "${prefix}/lib/no-perf-context/librocksdb.a"
