@@ -29,8 +29,8 @@ if [[ -z "${ARCHIVE:-}" ]]; then
 fi
 
 # GITHUB_WORKSPACE is a backslash path on Windows runners; tar rejects one as its -C directory and
-# CMake reads the backslashes in a -D value as escapes. Convert before first use, and only under
-# MSYS - elsewhere a backslash is an ordinary filename character.
+# CMake reads the backslashes in a -D value as escapes. On every other shell a backslash is an
+# ordinary filename character, so rewrite only here, and ahead of each path's first reader.
 windows_paths=false
 case "${OSTYPE:-$(uname -s)}" in
   msys* | cygwin* | win32 | MINGW* | MSYS* | CYGWIN*) windows_paths=true ;;
