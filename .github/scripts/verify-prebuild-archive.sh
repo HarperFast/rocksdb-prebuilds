@@ -16,7 +16,8 @@ Optional:
   SCRATCH           working directory for the extraction and probe build (default: a new temp dir)
   PROBE_DIR         tools/perf-context-probe (default: derived from this script's location)
   RUN_PROBE         true (default) to compile and run the probe; false for a cross-compiled target
-  PROBE_CMAKE_ARGS  whitespace-separated extra CMake arguments (MSVC runtime selection)
+  PROBE_CMAKE_ARGS  whitespace-separated extra CMake arguments (MSVC runtime selection).
+                    Spell any path value with forward slashes; these are passed through as given.
 USAGE
 }
 
@@ -28,8 +29,8 @@ if [[ -z "${ARCHIVE:-}" ]]; then
 fi
 
 # GITHUB_WORKSPACE is a backslash path on Windows runners; tar rejects one as its -C directory and
-# CMake reads the backslashes in a -D value as escapes. Convert each path before its first use.
-# Only where a backslash means a separator - elsewhere it is an ordinary filename character.
+# CMake reads the backslashes in a -D value as escapes. Convert before first use, and only under
+# MSYS - elsewhere a backslash is an ordinary filename character.
 windows_paths=false
 case "${OSTYPE:-$(uname -s)}" in
   msys* | cygwin* | win32 | MINGW* | MSYS* | CYGWIN*) windows_paths=true ;;
