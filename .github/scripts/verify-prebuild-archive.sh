@@ -191,10 +191,9 @@ if [[ "$RUN_PROBE" != "true" ]]; then
   exit 0
 fi
 
-# Left to itself on Windows, CMake picks a default generator from whatever it finds on the runner
-# and falls back to NMake Makefiles, which needs a developer prompt this step does not have; the
-# runner image moving to VS 2026 was enough to trigger that. vswhere says which Visual Studio is
-# installed and CMake says what it calls that one, so neither name is hardcoded here.
+# This step has no Visual Studio developer prompt, so CMake's default generator search can land on
+# NMake Makefiles and fail with no compiler. vswhere says which Visual Studio is installed and CMake
+# says what it calls that one, so neither name is written down here.
 GENERATOR_ARGS=()
 if [[ "$windows_paths" == true ]]; then
   vswhere="/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
@@ -207,8 +206,13 @@ if [[ "$windows_paths" == true ]]; then
     echo "::error::vswhere reported no Visual Studio installation" >&2
     exit 1
   fi
+  if ! cmake_help="$(cmake --help)"; then
+    echo "::error::cmake --help failed; cannot choose a generator" >&2
+    exit 1
+  fi
   # head closes the pipe early, which pipefail would otherwise read as a failure.
-  generator="$(cmake --help | sed -n "s/^[ *]*\(Visual Studio ${vs_major} [0-9][0-9][0-9][0-9]\).*/\1/p" | head -1 || true)"
+  generator="$(printf '%s\n' "$cmake_help" |
+    sed -n "s/^[ *]*\(Visual Studio ${vs_major} [0-9][0-9][0-9][0-9]\).*/\1/p" | head -1 || true)"
   if [[ -z "$generator" ]]; then
     echo "::error::$(cmake --version | head -1) has no generator for the installed Visual Studio ${vs_major}.x" >&2
     exit 1

@@ -45,8 +45,10 @@ detail.
 - `tools/perf-context-probe` links each archived library in turn and asserts
   `user_key_comparison_count` is non-zero for the enabled one and zero for the disabled one. The
   matrix's `run_probe` is false exactly where the runner cannot execute the target's binaries
-  (`darwin-x64`, both `windows-arm64` targets). On Windows the generator and architecture are both
-  named rather than left to CMake: its default search falls back to NMake Makefiles, which needs a
-  developer prompt the step does not have, and the runner image moving to VS 2026 was enough to
-  reach that fallback. The name is read from vswhere and CMake rather than written down here, so a
-  future image change surfaces as a clear error instead of an unbuildable default.
+  (`darwin-x64`, both `windows-arm64` targets). On Windows the generator and architecture are named
+  rather than left to CMake, whose default search falls back to NMake Makefiles and then fails with
+  no compiler. The generator name is read from vswhere and CMake rather than written down, so a
+  runner-image change surfaces as a clear error instead of an unbuildable default. The probe also
+  gets its own newer CMake there: the build is pinned to 3.31.10 to match the pinned vcpkg baseline,
+  and that CMake has no generator for the VS the image now ships. The probe only consumes the
+  installed package, so its CMake is independent of the one that built the libraries.

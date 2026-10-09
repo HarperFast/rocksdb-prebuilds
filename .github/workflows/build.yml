@@ -628,6 +628,16 @@ jobs:
           tar -cf - . | xz -9 > $ARCHIVE
           echo "archive=$ARCHIVE" >> $GITHUB_OUTPUT
 
+      # The build above is pinned to CMake 3.31.10 to match the pinned vcpkg baseline, and that
+      # CMake predates the Visual Studio 2026 generator the runner image now needs - its generator
+      # search finds no usable VS and falls back to NMake Makefiles. The probe is an ordinary
+      # consumer of the installed package, so it can have its own CMake without touching the build's.
+      - name: Install a CMake that knows the installed Visual Studio (probe only)
+        if: ${{ startsWith(matrix.platform.target, 'windows-') }}
+        uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: 4.4.3
+
       - name: Verify release archive
         if: ${{ matrix.platform.target != 'linux-x64-musl' && matrix.platform.target != 'linux-arm64-musl' }}
         shell: bash
