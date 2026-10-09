@@ -191,12 +191,39 @@ if [[ "$RUN_PROBE" != "true" ]]; then
   exit 0
 fi
 
+# Left to itself on Windows, CMake picks a default generator from whatever it finds on the runner
+# and falls back to NMake Makefiles, which needs a developer prompt this step does not have; the
+# runner image moving to VS 2026 was enough to trigger that. vswhere says which Visual Studio is
+# installed and CMake says what it calls that one, so neither name is hardcoded here.
+GENERATOR_ARGS=()
+if [[ "$windows_paths" == true ]]; then
+  vswhere="/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
+  if [[ ! -x "$vswhere" ]]; then
+    echo "::error::no vswhere.exe at ${vswhere}; cannot tell which Visual Studio to build the probe with" >&2
+    exit 1
+  fi
+  vs_major="$("$vswhere" -latest -property installationVersion 2>/dev/null | cut -d. -f1 | tr -cd '0-9' || true)"
+  if [[ -z "$vs_major" ]]; then
+    echo "::error::vswhere reported no Visual Studio installation" >&2
+    exit 1
+  fi
+  # head closes the pipe early, which pipefail would otherwise read as a failure.
+  generator="$(cmake --help | sed -n "s/^[ *]*\(Visual Studio ${vs_major} [0-9][0-9][0-9][0-9]\).*/\1/p" | head -1 || true)"
+  if [[ -z "$generator" ]]; then
+    echo "::error::$(cmake --version | head -1) has no generator for the installed Visual Studio ${vs_major}.x" >&2
+    exit 1
+  fi
+  echo "Building the probe with ${generator}"
+  GENERATOR_ARGS=(-G "$generator")
+fi
+
 echo "=== Behavioural probe ==="
 run_probe() {
   local name="$1" expectation="$2" build_dir="${SCRATCH}/probe-$1"
   shift 2
 
   cmake -S "$PROBE_DIR" -B "$build_dir" \
+    ${GENERATOR_ARGS[@]+"${GENERATOR_ARGS[@]}"} \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_PREFIX_PATH="$PREFIX" \
     ${EXTRA_CMAKE_ARGS[@]+"${EXTRA_CMAKE_ARGS[@]}"} \

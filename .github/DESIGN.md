@@ -45,4 +45,8 @@ detail.
 - `tools/perf-context-probe` links each archived library in turn and asserts
   `user_key_comparison_count` is non-zero for the enabled one and zero for the disabled one. The
   matrix's `run_probe` is false exactly where the runner cannot execute the target's binaries
-  (`darwin-x64`, both `windows-arm64` targets).
+  (`darwin-x64`, both `windows-arm64` targets). On Windows the generator and architecture are both
+  named rather than left to CMake: its default search falls back to NMake Makefiles, which needs a
+  developer prompt the step does not have, and the runner image moving to VS 2026 was enough to
+  reach that fallback. The name is read from vswhere and CMake rather than written down here, so a
+  future image change surfaces as a clear error instead of an unbuildable default.

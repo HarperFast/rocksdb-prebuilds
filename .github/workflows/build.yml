@@ -467,12 +467,12 @@ jobs:
             target: windows-x64
             triplet: x64-windows-static
             run_probe: true
-            probe_cmake_args: -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+            probe_cmake_args: -A x64 -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
           - runner: windows-latest
             target: windows-x64-static-md
             triplet: x64-windows-static-md
             run_probe: true
-            probe_cmake_args: -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL
+            probe_cmake_args: -A x64 -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL
           - runner: windows-latest
             target: windows-arm64
             triplet: arm64-windows-static
