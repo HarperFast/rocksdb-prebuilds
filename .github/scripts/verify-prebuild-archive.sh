@@ -26,16 +26,17 @@ if [[ -z "${ARCHIVE:-}" ]]; then
   usage
   exit 2
 fi
+
+# GITHUB_WORKSPACE is a backslash path on Windows runners, which tar cannot open and CMake reads as
+# escapes in a -D value. Converting on entry, before anything reads these paths, keeps every later
+# use - including the checks just below - on one spelling.
+to_unix_path() { printf '%s' "${1//\\//}"; }
+ARCHIVE="$(to_unix_path "$ARCHIVE")"
+
 if [[ ! -f "$ARCHIVE" ]]; then
   echo "verify-prebuild-archive.sh: no such archive: $ARCHIVE" >&2
   exit 2
 fi
-
-# GITHUB_WORKSPACE is a backslash path on Windows runners. tar cannot open one, and CMake reads
-# backslashes in a -D value as escapes, so every path this script hands to another tool is converted
-# once here rather than at each use.
-to_unix_path() { printf '%s' "${1//\\//}"; }
-ARCHIVE="$(to_unix_path "$ARCHIVE")"
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 : "${PROBE_DIR:=$(cd "${script_dir}/../.." && pwd)/tools/perf-context-probe}"
