@@ -115,9 +115,11 @@ if(zlib_anchor_at EQUAL -1)
   message(FATAL_ERROR "No ${zlib_anchor} in ${rocksdb_config}; the archived zlib would be unresolvable")
 endif()
 # The prefix comes from the config's own location: PACKAGE_PREFIX_DIR holds one of the dependency
-# prefixes by this point on CMake 3.29 and older.
+# prefixes by this point on CMake 3.29 and older. The header is pinned alongside the library so the
+# two cannot come from different installations; a miss leaves FindZLIB its own search, as before.
 string(REPLACE "${zlib_anchor}" "if(NOT ZLIB_LIBRARY)
     get_filename_component(_rocksdb_prefix \"\${CMAKE_CURRENT_LIST_DIR}/../..\" ABSOLUTE)
+    find_path(ZLIB_INCLUDE_DIR NAMES zlib.h PATHS \"\${_rocksdb_prefix}/include\" NO_DEFAULT_PATH)
     find_library(ZLIB_LIBRARY_RELEASE NAMES zs z PATHS \"\${_rocksdb_prefix}/lib\" NO_DEFAULT_PATH)
     find_library(ZLIB_LIBRARY_DEBUG NAMES zsd zd z PATHS \"\${_rocksdb_prefix}/debug/lib\" NO_DEFAULT_PATH)
     unset(_rocksdb_prefix)
