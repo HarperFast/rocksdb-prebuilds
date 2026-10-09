@@ -6,6 +6,12 @@ project(perf-context-probe CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# RocksDBConfig resolves ZLIB in module mode and the archive ships only a static zlib, which vcpkg
+# installs as zs.lib. FindZLIB looks for that name only when told the library is static, so without
+# this the Windows targets fail to configure. It is also what defines the ZLIB::ZLIB target
+# RocksDBTargets links; the archive's own ZLIBConfig defines ZLIB::ZLIBSTATIC instead.
+set(ZLIB_USE_STATIC_LIBS ON)
+
 find_package(RocksDB CONFIG REQUIRED)
 
 add_executable(perf-context-probe probe.cc)
