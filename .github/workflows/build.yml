@@ -467,12 +467,12 @@ jobs:
             target: windows-x64
             triplet: x64-windows-static
             run_probe: true
-            probe_cmake_args: -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+            probe_cmake_args: -A x64 -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
           - runner: windows-latest
             target: windows-x64-static-md
             triplet: x64-windows-static-md
             run_probe: true
-            probe_cmake_args: -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL
+            probe_cmake_args: -A x64 -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL
           - runner: windows-latest
             target: windows-arm64
             triplet: arm64-windows-static
@@ -490,7 +490,7 @@ jobs:
 
       - name: Install cmake
         if: ${{ matrix.platform.target != 'linux-x64-musl' && matrix.platform.target != 'linux-arm64-musl' }}
-        uses: lukka/get-cmake@latest
+        uses: lukka/get-cmake@a89e43e22a96abafcd7a62db652a65ecd33052c9 # latest as of 2026-10-04
         with:
           cmakeVersion: 3.31.10
 
@@ -627,6 +627,13 @@ jobs:
           cd "${GITHUB_WORKSPACE}/dist"
           tar -cf - . | xz -9 > $ARCHIVE
           echo "archive=$ARCHIVE" >> $GITHUB_OUTPUT
+
+      # Separate from the build's 3.31.10, which has no generator for the VS this image ships.
+      - name: Install a CMake that knows the installed Visual Studio (probe only)
+        if: ${{ startsWith(matrix.platform.target, 'windows-') && matrix.platform.run_probe }}
+        uses: lukka/get-cmake@a89e43e22a96abafcd7a62db652a65ecd33052c9 # latest as of 2026-10-04
+        with:
+          cmakeVersion: 4.4.3
 
       - name: Verify release archive
         if: ${{ matrix.platform.target != 'linux-x64-musl' && matrix.platform.target != 'linux-arm64-musl' }}
