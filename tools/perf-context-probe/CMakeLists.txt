@@ -1,4 +1,5 @@
-cmake_minimum_required(VERSION 3.20)
+# 3.24 for ZLIB_USE_STATIC_LIBS below.
+cmake_minimum_required(VERSION 3.24)
 project(perf-context-probe CXX)
 
 # RocksDB's installed headers require C++20 and the package exports no
@@ -6,10 +7,8 @@ project(perf-context-probe CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# RocksDBConfig resolves ZLIB in module mode and the archive ships only a static zlib, which vcpkg
-# installs as zs.lib. FindZLIB looks for that name only when told the library is static, so without
-# this the Windows targets fail to configure. It is also what defines the ZLIB::ZLIB target
-# RocksDBTargets links; the archive's own ZLIBConfig defines ZLIB::ZLIBSTATIC instead.
+# RocksDBConfig resolves ZLIB in module mode, and FindZLIB searches the archived zs.lib only when
+# it knows the library is static.
 set(ZLIB_USE_STATIC_LIBS ON)
 
 find_package(RocksDB CONFIG REQUIRED)
