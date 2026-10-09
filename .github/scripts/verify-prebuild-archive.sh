@@ -30,8 +30,7 @@ fi
 # GITHUB_WORKSPACE is a backslash path on Windows runners. tar refused one as its -C directory, and
 # CMake reads backslashes in a -D value as escapes. Converting on entry keeps every later reader -
 # xz, tar, CMake and the checks just below - on one spelling.
-to_unix_path() { printf '%s' "${1//\\//}"; }
-ARCHIVE="$(to_unix_path "$ARCHIVE")"
+ARCHIVE="${ARCHIVE//\\//}"
 
 if [[ ! -f "$ARCHIVE" ]]; then
   echo "verify-prebuild-archive.sh: no such archive: $ARCHIVE" >&2
@@ -45,8 +44,8 @@ if [[ -z "${SCRATCH:-}" ]]; then
   SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/rocksdb-archive-check.XXXXXX")"
   echo "Extracting and probing under $SCRATCH"
 fi
-PROBE_DIR="$(to_unix_path "$PROBE_DIR")"
-SCRATCH="$(to_unix_path "$SCRATCH")"
+PROBE_DIR="${PROBE_DIR//\\//}"
+SCRATCH="${SCRATCH//\\//}"
 
 readonly VARIANT_SUBDIR="no-perf-context"
 readonly PREFIX="${SCRATCH}/extracted"
