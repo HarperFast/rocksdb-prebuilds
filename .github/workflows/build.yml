@@ -740,6 +740,16 @@ jobs:
 
           RELEASES="$(get_releases)"
           RELEASE_COUNT="$(jq 'length' <<< "$RELEASES")"
+          # Seeing nothing is the one answer worth re-reading: acting on a stale empty list creates a
+          # second draft for a tag that already has one.
+          for attempt in 1 2 3; do
+            if [[ "$RELEASE_COUNT" -ne 0 ]]; then
+              break
+            fi
+            sleep $((attempt * 2))
+            RELEASES="$(get_releases)"
+            RELEASE_COUNT="$(jq 'length' <<< "$RELEASES")"
+          done
           if [[ "$RELEASE_COUNT" -gt 1 ]]; then
             echo "Multiple GitHub releases claim $TAG_NAME; refusing to publish" >&2
             exit 1
@@ -770,7 +780,6 @@ jobs:
               echo "GitHub release $TAG_NAME was already completed by this run; continuing with its S3 mirror"
               exit 0
             elif [[ "$OWNED_BY_THIS_RUN" != true ]]; then
-              # A draft is only another run's to keep while that run is still going.
               OWNER_RUN_ID="$(jq -r '(.body // "") | capture("<!-- rocksdb-prebuilds-owner:(?<id>[0-9]+) -->").id' <<< "$RELEASE")"
               OWNER_RUN_ERR="$(mktemp)"
               OWNER_RUN_STATUS=unknown
@@ -778,7 +787,6 @@ jobs:
                 if OWNER_RUN_STATUS="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$OWNER_RUN_ID" --jq '.status' 2>"$OWNER_RUN_ERR")"; then
                   break
                 fi
-                # A run GitHub no longer has is not one that is still running.
                 if grep -qi 'not found' "$OWNER_RUN_ERR"; then
                   OWNER_RUN_STATUS=completed
                   break
@@ -790,8 +798,11 @@ jobs:
               done
               if [[ "$OWNER_RUN_STATUS" != completed ]]; then
                 echo "Draft GitHub release $TAG_NAME belongs to run $OWNER_RUN_ID, which is $OWNER_RUN_STATUS; refusing to overwrite it" >&2
+                cat "$OWNER_RUN_ERR" >&2 || true
+                rm -f "$OWNER_RUN_ERR"
                 exit 1
               fi
+              rm -f "$OWNER_RUN_ERR"
               echo "Reclaiming draft GitHub release $TAG_NAME from completed run $OWNER_RUN_ID"
               # The tag is cut from target_commitish at publication, so it has to move to this run's
               # commit: the assets about to be uploaded are built from it, not from the old owner's.
@@ -887,6 +898,14 @@ jobs:
             --jq '.assets[] | [.name, .size] | @tsv' | LC_ALL=C sort > "$ACTUAL_ASSETS"
           if ! diff -u "$EXPECTED_ASSETS" "$ACTUAL_ASSETS"; then
             echo "Draft release assets do not exactly match this run's artifacts" >&2
+            exit 1
+          fi
+
+          # GitHub cuts the tag from target_commitish only when the tag does not already exist, so a
+          # leftover tag would quietly attach these assets to a different commit.
+          EXISTING_TAG_SHA="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG_NAME" --jq '.object.sha' 2>/dev/null || true)"
+          if [[ -n "$EXISTING_TAG_SHA" ]] && [[ "$EXISTING_TAG_SHA" != "$GITHUB_SHA" ]]; then
+            echo "Tag $TAG_NAME already exists at $EXISTING_TAG_SHA, not $GITHUB_SHA; refusing to publish" >&2
             exit 1
           fi
 
