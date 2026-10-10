@@ -770,8 +770,22 @@ jobs:
               echo "GitHub release $TAG_NAME was already completed by this run; continuing with its S3 mirror"
               exit 0
             elif [[ "$OWNED_BY_THIS_RUN" != true ]]; then
-              echo "Draft GitHub release $TAG_NAME belongs to another run; refusing to overwrite it" >&2
-              exit 1
+              # A draft is only another run's to keep while that run is still going. One left behind
+              # by a finished run would otherwise block the tag until someone deleted it by hand.
+              OWNER_RUN_ID="$(jq -r '(.body // "") | capture("<!-- rocksdb-prebuilds-owner:(?<id>[0-9]+) -->").id' <<< "$RELEASE")"
+              OWNER_RUN_STATUS="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$OWNER_RUN_ID" --jq '.status' 2>/dev/null || echo unknown)"
+              if [[ "$OWNER_RUN_STATUS" != completed ]]; then
+                echo "Draft GitHub release $TAG_NAME belongs to run $OWNER_RUN_ID, which is $OWNER_RUN_STATUS; refusing to overwrite it" >&2
+                exit 1
+              fi
+              echo "Reclaiming draft GitHub release $TAG_NAME from completed run $OWNER_RUN_ID"
+              RECLAIM_PAYLOAD="$(jq -n --arg body "$RELEASE_BODY" '{body:$body}')"
+              RELEASE="$(gh api --method PATCH \
+                "repos/$GITHUB_REPOSITORY/releases/$(jq -r '.id' <<< "$RELEASE")" --input - <<< "$RECLAIM_PAYLOAD")"
+              if [[ "$(jq --arg marker "$OWNER_MARKER" '(.body // "") | contains($marker)' <<< "$RELEASE")" != true ]]; then
+                echo "Could not take ownership of draft GitHub release $TAG_NAME" >&2
+                exit 1
+              fi
             fi
 
             RELEASE_ID="$(jq -r '.id' <<< "$RELEASE")"
@@ -786,7 +800,21 @@ jobs:
             RELEASE="$(gh api --method POST "repos/$GITHUB_REPOSITORY/releases" --input - <<< "$CREATE_PAYLOAD")"
             RELEASE_ID="$(jq -r '.id' <<< "$RELEASE")"
 
-            RELEASES="$(get_releases)"
+            # The releases list is not read-after-write consistent: a draft created a moment ago can
+            # be absent from it. Only a list that still disagrees after several reads means another
+            # run claimed the tag.
+            for attempt in 1 2 3 4 5; do
+              RELEASES="$(get_releases)"
+              RELEASE_MATCHES="$(jq 'length' <<< "$RELEASES")"
+              if [[ "$RELEASE_MATCHES" -gt 1 ]]; then
+                break
+              fi
+              if [[ "$RELEASE_MATCHES" -eq 1 ]] && [[ "$(jq -r '.[0].id' <<< "$RELEASES")" == "$RELEASE_ID" ]]; then
+                break
+              fi
+              echo "Release $TAG_NAME not yet listed after creating $RELEASE_ID (attempt $attempt)"
+              sleep $((attempt * 3))
+            done
             if [[ "$(jq 'length' <<< "$RELEASES")" -ne 1 ]] ||
               [[ "$(jq -r '.[0].id' <<< "$RELEASES")" != "$RELEASE_ID" ]]; then
               echo "Unable to establish unique ownership of GitHub release $TAG_NAME" >&2
