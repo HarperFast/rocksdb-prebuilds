@@ -902,11 +902,19 @@ jobs:
           fi
 
           # GitHub cuts the tag from target_commitish only when the tag does not already exist, so a
-          # leftover tag would quietly attach these assets to a different commit.
-          EXISTING_TAG_SHA="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG_NAME" --jq '.object.sha' 2>/dev/null || true)"
-          if [[ -n "$EXISTING_TAG_SHA" ]] && [[ "$EXISTING_TAG_SHA" != "$GITHUB_SHA" ]]; then
-            echo "Tag $TAG_NAME already exists at $EXISTING_TAG_SHA, not $GITHUB_SHA; refusing to publish" >&2
-            exit 1
+          # leftover tag would quietly attach these assets to a different commit. gh prints the error
+          # body on stdout, so whether the tag exists is its exit status, not whether it said anything.
+          if TAG_OBJECT="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG_NAME" \
+            --jq '.object.type + " " + .object.sha' 2>/dev/null)"; then
+            EXISTING_TAG_SHA="${TAG_OBJECT##* }"
+            # An annotated tag names a tag object; the commit is one dereference further in.
+            if [[ "${TAG_OBJECT%% *}" == tag ]]; then
+              EXISTING_TAG_SHA="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$EXISTING_TAG_SHA" --jq '.object.sha')"
+            fi
+            if [[ "$EXISTING_TAG_SHA" != "$GITHUB_SHA" ]]; then
+              echo "Tag $TAG_NAME already exists at $EXISTING_TAG_SHA, not $GITHUB_SHA; refusing to publish" >&2
+              exit 1
+            fi
           fi
 
           FINAL_PAYLOAD="$(jq -n \
