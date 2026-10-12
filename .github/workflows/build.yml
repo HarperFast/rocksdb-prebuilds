@@ -998,10 +998,16 @@ jobs:
             }
 
   on-release-failure:
-    if: failure() && !cancelled() && needs.check.outputs.should_build == 'true'
+    # No should_build guard: on the no-op path every downstream job is skipped, so
+    # failure() is already false, and a check that fails before deciding leaves
+    # should_build empty. Gating on it only ever silenced check's own failures.
+    if: failure() && !cancelled()
     name: Release failure
     needs: [check, release]
     runs-on: ubuntu-latest
+    env:
+      # release_version is written on check's last line, so it is empty when check failed.
+      TITLE: "${{ needs.check.outputs.release_version && format('RocksDB prebuild failed: v{0}', needs.check.outputs.release_version) || 'RocksDB prebuild check failed' }}"
     steps:
       - name: Send Slack notification
         uses: slackapi/slack-github-action@v2.0.0
@@ -1011,13 +1017,13 @@ jobs:
           payload: |
             {
               "channel": "${{ secrets.SLACK_CI_CHANNEL_ID }}",
-              "text": "RocksDB prebuild failed: v${{ needs.check.outputs.release_version }}",
+              "text": "${{ env.TITLE }}",
               "blocks": [
                 {
                   "type": "header",
                   "text": {
                     "type": "plain_text",
-                    "text": "RocksDB prebuild failed: v${{ needs.check.outputs.release_version }}"
+                    "text": "${{ env.TITLE }}"
                   }
                 },
                 {
