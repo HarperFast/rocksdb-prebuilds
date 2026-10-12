@@ -777,7 +777,7 @@ jobs:
                 exit 0
               fi
 
-              echo "GitHub release $TAG_NAME was already completed by this run; continuing with its S3 mirror"
+              echo "GitHub release $TAG_NAME was already completed by this run; nothing left to do"
               exit 0
             elif [[ "$OWNED_BY_THIS_RUN" != true ]]; then
               OWNER_RUN_ID="$(jq -r '(.body // "") | capture("<!-- rocksdb-prebuilds-owner:(?<id>[0-9]+) -->").id' <<< "$RELEASE")"
@@ -940,19 +940,6 @@ jobs:
             echo "GitHub release $TAG_NAME did not finalize with its completion marker" >&2
             exit 1
           fi
-
-      - name: Configure AWS credentials
-        if: ${{ steps.publish-release.outputs.lost_race != 'true' }}
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-2
-
-      - name: Upload artifacts to S3
-        if: ${{ steps.publish-release.outputs.lost_race != 'true' }}
-        run: |
-          aws s3 sync artifacts/ s3://harper-artifacts/rocksdb-prebuilds/v${{ needs.check.outputs.release_version }}/ --delete
 
   on-release-success:
     if: success() && !cancelled() && needs.check.outputs.should_build == 'true' && needs.release.outputs.lost_race != 'true'
