@@ -998,8 +998,7 @@ jobs:
             }
 
   on-release-failure:
-    # should_build is written on check's last line, so a check that fails is caught by
-    # its result, not its outputs.
+    # A failed check may not have written its outputs, so it is caught by its result.
     if: failure() && !cancelled() && (needs.check.result == 'failure' || needs.check.outputs.should_build == 'true')
     name: Release failure
     needs: [check, release]
