@@ -901,16 +901,42 @@ jobs:
             exit 1
           fi
 
-          # GitHub cuts the tag from target_commitish only when the tag does not already exist, so a
-          # leftover tag would quietly attach these assets to a different commit. gh prints the error
-          # body on stdout, so whether the tag exists is its exit status, not whether it said anything.
-          if TAG_OBJECT="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG_NAME" \
-            --jq '.object.type + " " + .object.sha' 2>/dev/null)"; then
-            EXISTING_TAG_SHA="${TAG_OBJECT##* }"
-            # An annotated tag names a tag object; the commit is one dereference further in.
-            if [[ "${TAG_OBJECT%% *}" == tag ]]; then
-              EXISTING_TAG_SHA="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$EXISTING_TAG_SHA" --jq '.object.sha')"
+          # GitHub cuts the tag from target_commitish only while the tag does not exist, so a
+          # leftover tag would attach these assets to a different commit.
+          TAG_ERR="$(mktemp)"
+          TAG_STATE=unknown
+          for attempt in 1 2 3; do
+            if TAG_OBJECT="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG_NAME" \
+              --jq '.object.type + " " + .object.sha' 2>"$TAG_ERR")"; then
+              TAG_STATE=present
+              break
             fi
+            if grep -qi 'not found' "$TAG_ERR"; then
+              TAG_STATE=absent
+              break
+            fi
+            if [[ "$attempt" -lt 3 ]]; then
+              sleep $((attempt * 3))
+            fi
+          done
+          if [[ "$TAG_STATE" == unknown ]]; then
+            echo "Could not tell whether tag $TAG_NAME exists; refusing to publish" >&2
+            cat "$TAG_ERR" >&2 || true
+            rm -f "$TAG_ERR"
+            exit 1
+          fi
+          rm -f "$TAG_ERR"
+          if [[ "$TAG_STATE" == present ]]; then
+            TAG_TYPE="${TAG_OBJECT%% *}"
+            EXISTING_TAG_SHA="${TAG_OBJECT##* }"
+            # A tag object names a commit or another tag object.
+            for _ in 1 2 3 4 5; do
+              [[ "$TAG_TYPE" == tag ]] || break
+              TAG_OBJECT="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$EXISTING_TAG_SHA" \
+                --jq '.object.type + " " + .object.sha')"
+              TAG_TYPE="${TAG_OBJECT%% *}"
+              EXISTING_TAG_SHA="${TAG_OBJECT##* }"
+            done
             if [[ "$EXISTING_TAG_SHA" != "$GITHUB_SHA" ]]; then
               echo "Tag $TAG_NAME already exists at $EXISTING_TAG_SHA, not $GITHUB_SHA; refusing to publish" >&2
               exit 1
