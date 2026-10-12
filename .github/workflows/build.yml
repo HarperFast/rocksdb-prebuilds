@@ -784,7 +784,7 @@ jobs:
               OWNER_RUN_BODY="$(mktemp)"
               OWNER_HTTP="$(curl -sS -o "$OWNER_RUN_BODY" -w '%{http_code}' --retry 3 --retry-all-errors \
                 -H "Authorization: Bearer $GH_TOKEN" \
-                "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs/$OWNER_RUN_ID" || echo 000)"
+                "${GITHUB_API_URL:-https://api.github.com}/repos/$GITHUB_REPOSITORY/actions/runs/$OWNER_RUN_ID" || true)"
               case "$OWNER_HTTP" in
                 200) OWNER_RUN_STATUS="$(jq -r '.status' < "$OWNER_RUN_BODY")" ;;
                 404) OWNER_RUN_STATUS=completed ;;
@@ -896,43 +896,38 @@ jobs:
           # GitHub cuts the tag from target_commitish only while the tag does not exist, so a
           # leftover tag would attach these assets to a different commit.
           TAG_BODY="$(mktemp)"
+          trap 'rm -f "$TAG_BODY"' EXIT
           read_git_object() {
-            local url="$1" http
-            http="$(curl -sS -o "$TAG_BODY" -w '%{http_code}' --retry 3 --retry-all-errors \
-              -H "Authorization: Bearer $GH_TOKEN" "$url" || echo 000)"
-            printf '%s' "$http"
+            curl -sS -o "$TAG_BODY" -w '%{http_code}' --retry 3 --retry-all-errors \
+              -H "Authorization: Bearer $GH_TOKEN" "$1" || true
           }
-          TAG_HTTP="$(read_git_object "https://api.github.com/repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG_NAME")"
+          API="${GITHUB_API_URL:-https://api.github.com}"
+          TAG_HTTP="$(read_git_object "$API/repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG_NAME")"
           if [[ "$TAG_HTTP" != 200 ]] && [[ "$TAG_HTTP" != 404 ]]; then
             echo "Could not tell whether tag $TAG_NAME exists (HTTP $TAG_HTTP); refusing to publish" >&2
-            rm -f "$TAG_BODY"
             exit 1
           fi
           if [[ "$TAG_HTTP" == 200 ]]; then
             TAG_TYPE="$(jq -r '.object.type' < "$TAG_BODY")"
             EXISTING_TAG_SHA="$(jq -r '.object.sha' < "$TAG_BODY")"
-            for _ in 1 2 3 4 5; do
+            for _ in $(seq 20); do
               [[ "$TAG_TYPE" == tag ]] || break
-              TAG_HTTP="$(read_git_object "https://api.github.com/repos/$GITHUB_REPOSITORY/git/tags/$EXISTING_TAG_SHA")"
+              TAG_HTTP="$(read_git_object "$API/repos/$GITHUB_REPOSITORY/git/tags/$EXISTING_TAG_SHA")"
               if [[ "$TAG_HTTP" != 200 ]]; then
                 echo "Could not resolve tag $TAG_NAME to a commit (HTTP $TAG_HTTP); refusing to publish" >&2
-                rm -f "$TAG_BODY"
                 exit 1
               fi
               TAG_TYPE="$(jq -r '.object.type' < "$TAG_BODY")"
               EXISTING_TAG_SHA="$(jq -r '.object.sha' < "$TAG_BODY")"
             done
-            rm -f "$TAG_BODY"
-            if [[ "$TAG_TYPE" == tag ]]; then
-              echo "Tag $TAG_NAME nests tag objects deeper than this resolves; refusing to publish" >&2
+            if [[ "$TAG_TYPE" != commit ]]; then
+              echo "Tag $TAG_NAME resolves to a $TAG_TYPE, not a commit; refusing to publish" >&2
               exit 1
             fi
             if [[ "$EXISTING_TAG_SHA" != "$GITHUB_SHA" ]]; then
               echo "Tag $TAG_NAME already exists at $EXISTING_TAG_SHA, not $GITHUB_SHA; refusing to publish" >&2
               exit 1
             fi
-          else
-            rm -f "$TAG_BODY"
           fi
 
           FINAL_PAYLOAD="$(jq -n \
