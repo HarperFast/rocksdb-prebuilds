@@ -21,6 +21,8 @@ on:
       - "experimental-patches/**"
       - "vcpkg-overlays/rocksdb/**"
       - ".github/workflows/build.yml"
+      - ".github/scripts/apply-patches.sh"
+      - ".github/scripts/gate-patches.sh"
   schedule:
     - cron: "30 2 * * *"
   workflow_dispatch:
@@ -62,12 +64,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # The PR checkout is GitHub's merge commit; its first parent is the base it merged onto.
           if ! git rev-parse --verify --quiet HEAD^2 > /dev/null; then
             echo "::error::expected the pull request merge commit at HEAD"
             exit 1
           fi
-          git diff --name-only HEAD^1 HEAD > "$RUNNER_TEMP/changed-files"
+          # --no-renames: a file moved out of a directory still changes that directory.
+          git diff --name-only --no-renames HEAD^1 HEAD > "$RUNNER_TEMP/changed-files"
           .github/scripts/gate-patches.sh "$RUNNER_TEMP/changed-files"
 
   check:
@@ -365,6 +367,11 @@ jobs:
             exit 1
           fi
 
+          OFFICIAL_PIN="$(tr -d '[:space:]' < vcpkg-overlays/rocksdb/patched-version.txt)"
+          if [[ -z "$OFFICIAL_PIN" ]]; then
+            echo "::error::vcpkg-overlays/rocksdb/patched-version.txt is missing or empty"
+            exit 1
+          fi
           blocking=0
           for dir in experimental-patches/*/; do
             name="$(basename "$dir")"
@@ -383,7 +390,13 @@ jobs:
             # Distinct causes get distinct messages: "rebase it" is wrong advice for a
             # patch that applied cleanly and whose audit found an upstream change.
             problem=""
-            if ! .github/scripts/apply-patches.sh "$SRC" "$name"; then
+            pin=""
+            [[ -f "${dir}patched-version.txt" ]] && pin="$(tr -d '[:space:]' < "${dir}patched-version.txt")"
+            # The PR gate lets a stale patch merge without running its test.sh against the
+            # current official patches, so a stale patch must not ship. See .github/DESIGN.md.
+            if [[ -n "$pin" && "$pin" != "$OFFICIAL_PIN" ]]; then
+              problem="is pinned to $pin while the official patches target $OFFICIAL_PIN, so its test.sh has not run against them; rebase it onto $OFFICIAL_PIN and update its patched-version.txt"
+            elif ! .github/scripts/apply-patches.sh "$SRC" "$name"; then
               problem="no longer applies cleanly to RocksDB v$VERSION; rebase it"
             elif [[ -f "${dir}audit.sh" && ! -x "${dir}audit.sh" ]]; then
               problem="has a non-executable audit.sh; chmod +x it"

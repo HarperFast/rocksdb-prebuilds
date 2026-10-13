@@ -82,10 +82,14 @@ On a PR, the gate applies the official patches and then this patch at this patch
 and are gated there separately. When the two pins differ and the official patches no
 longer apply at this patch's pin, this patch is **stale**: a PR that does not touch it
 gets a warning instead of a failure, so rebasing the official patches for a new RocksDB
-release is never blocked by an opt-in patch. A PR that changes a stale patch fails until
-it is rebased onto the official pin. If the official patches still apply at this
-patch's pin, a failure there blocks even a PR that only changed the official patches,
-because that PR broke this patch at the version it targets.
+release is not blocked by an opt-in patch it has moved past. A PR that changes a stale
+patch fails until it is rebased onto the official pin. If the official patches still
+apply at this patch's pin, a failure there blocks even a PR that only changed the
+official patches, because that PR broke this patch at the version it targets.
+
+A stale patch cannot ship: whenever its pin differs from the official pin, a build that
+requests it is blocked, because its `test.sh` has not run against the current official
+patches.
 
 On a PR the hooks gate the merge. The nightly runs `audit.sh` only, against the release
 being built, and **fails only the builds that actually apply the patch**: a plain

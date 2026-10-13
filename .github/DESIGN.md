@@ -73,6 +73,8 @@ nightly repair on a patch no nightly applies (#25). The fix keeps one distinctio
 
 **Where the code enforces it.** `gate-patches.sh` reapplies the official patches alone to tell those
 two cases apart, and reads what the PR changes from the merge commit's first parent, which is why
-`validate` checks out with `fetch-depth: 2`. The pins are CI metadata, not a release constraint: a
-green gate proves the patches apply at the pinned tags, not that they apply to every newer release
-the nightly builds.
+`validate` checks out with `fetch-depth: 2`. Letting a stale patch merge with only a warning means its
+`test.sh` never ran against the current official patches, so the release `audit` job blocks any build
+that requests a patch whose pin differs from the official pin. Beyond that one check the pins are CI
+metadata, not a release constraint: a green gate proves the patches apply at the pinned tags, not
+that they apply to every newer release the nightly builds.

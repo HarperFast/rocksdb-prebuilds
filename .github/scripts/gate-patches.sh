@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# PR gate for the patch sets. Each is applied at the upstream tag its patched-version.txt
-# declares: the official patches at vcpkg-overlays/rocksdb's, and each experimental patch, on
-# top of the official ones, at its own. See .github/DESIGN.md.
+# PR gate: applies each patch set at its own patched-version.txt. See .github/DESIGN.md.
 #
 # usage: gate-patches.sh CHANGED_FILES
 #   CHANGED_FILES lists the paths this PR changes, one per line.
@@ -44,7 +42,8 @@ fresh_tree() {
   fi
 }
 
-run_hook() {   # name, hook file -- present but non-executable is an error, never a silent skip
+# Present but non-executable is an error, never a silent skip.
+run_hook() {
   local name="$1" hook="$2"
   [[ -f "$hook" ]] || return 0
   if [[ ! -x "$hook" ]]; then
@@ -98,7 +97,9 @@ for dir in experimental-patches/*/; do
   if .github/scripts/apply-patches.sh "$src"; then
     echo "::error::$name does not apply on top of the official patches at $pin; rebase it"
     failed=1
-  elif [[ "$pin" == "$official_pin" ]] || dir_changed "$name"; then
+  elif [[ "$pin" == "$official_pin" ]]; then
+    failed=1   # already reported against the official pin above
+  elif dir_changed "$name"; then
     echo "::error::$name is pinned to $pin, where the official patches do not apply; rebase it onto $official_pin and update its patched-version.txt"
     failed=1
   else
