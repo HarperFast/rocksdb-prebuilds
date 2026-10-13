@@ -66,7 +66,9 @@ experimental patch stays where its author verified it. Applying today's official
 older experimental pin used to fail every official rebase for a new upstream release, blocking the
 nightly repair on a patch no nightly applies (#25). The two halves of the rule only hold together:
 not gating a stale patch is safe only because nothing can ship it, and refusing to ship it is
-reasonable only because the gate never ran its `test.sh` against the current official patches.
+reasonable only because the gate has not run its `test.sh` at the official pin, which is the version a
+build of it is closest to. A PR that changes a stale patch still runs its hooks at its own pin, so it
+can merge a fix there; shipping it still takes a rebase onto the official pin.
 
 **Where the code enforces it.** `gate-patches.sh` skips a stale patch unless the PR changes its
 directory, read from the merge commit's first parent (hence `fetch-depth: 2` in `validate`). The

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PR gate: applies each patch set at its own patched-version.txt. See .github/DESIGN.md.
+# See .github/DESIGN.md.
 #
 # usage: gate-patches.sh CHANGED_FILES
 #   CHANGED_FILES lists the paths this PR changes, one per line.
@@ -19,6 +19,10 @@ src="$work/src"
 
 # The file is PR-controlled and becomes part of a URL, so it must be tag-shaped.
 read_pin() {
+  if [[ ! -s "$1" ]]; then
+    echo "::error::$1 is missing or empty"
+    exit 1
+  fi
   pin="$(tr -d '[:space:]' < "$1")"
   if [[ ! "$pin" =~ ^v[0-9][0-9A-Za-z.-]*$ ]]; then
     echo "::error::$1 must hold one RocksDB tag such as v11.8.1 (got '$pin')"
@@ -101,7 +105,7 @@ for dir in experimental-patches/*/; do
     run_hook "$name" "${dir}audit.sh" || failed=1
     run_hook "$name" "${dir}test.sh" || failed=1
   else
-    echo "::error::$name does not apply on top of the official patches at $pin; rebase it"
+    echo "::error::the official patches and then $name do not apply at $pin; rebase $name onto $official_pin and update its patched-version.txt"
     failed=1
   fi
   echo "::endgroup::"

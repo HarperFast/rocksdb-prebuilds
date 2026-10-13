@@ -367,11 +367,11 @@ jobs:
             exit 1
           fi
 
-          OFFICIAL_PIN="$(tr -d '[:space:]' < vcpkg-overlays/rocksdb/patched-version.txt)"
-          if [[ -z "$OFFICIAL_PIN" ]]; then
+          if [[ ! -s vcpkg-overlays/rocksdb/patched-version.txt ]]; then
             echo "::error::vcpkg-overlays/rocksdb/patched-version.txt is missing or empty"
             exit 1
           fi
+          OFFICIAL_PIN="$(tr -d '[:space:]' < vcpkg-overlays/rocksdb/patched-version.txt)"
           blocking=0
           for dir in experimental-patches/*/; do
             name="$(basename "$dir")"
@@ -397,7 +397,7 @@ jobs:
             elif [[ -x "${dir}audit.sh" ]] && ! "${dir}audit.sh" "$SRC"; then
               problems+=("applies cleanly but its audit.sh failed; upstream likely changed a site the patch must cover")
             fi
-            # The PR gate does not run a stale patch's test.sh, so it must not ship. See .github/DESIGN.md.
+            # A stale patch's test.sh has not run at the official pin, so it must not ship. See .github/DESIGN.md.
             if [[ -f "${dir}patched-version.txt" ]]; then
               pin="$(tr -d '[:space:]' < "${dir}patched-version.txt")"
               if [[ "$pin" != "$OFFICIAL_PIN" ]]; then

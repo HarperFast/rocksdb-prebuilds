@@ -69,7 +69,7 @@ Three optional files let a patch carry its own verification, so
 | File | Purpose |
 |---|---|
 | `patched-version.txt` | The upstream tag (e.g. `v11.8.1`) the patch was verified against. Without it the PR gate cannot know what to build, and skips that patch. |
-| `audit.sh <src>` | Cheap check against the **already-patched** source tree. Runs on every PR *and* nightly against the release being built. |
+| `audit.sh <src>` | Cheap check against the **already-patched** source tree. Runs on PRs (except for an unchanged stale patch, see below) *and* nightly against the release being built. |
 | `test.sh <src>` | Expensive check (building and running upstream tests). Runs on PRs only, and not for a stale patch (see below). |
 
 Both hooks receive the patched RocksDB source directory and should exit non-zero on
@@ -83,8 +83,7 @@ and are gated there separately. A patch whose pin differs from the official pin 
 **stale**. A stale patch is gated only by a PR that changes it, so rebasing the official
 patches for a new RocksDB release is never blocked by an opt-in patch it has moved past.
 A stale patch also cannot ship: a build that requests it is blocked until it is rebased
-onto the official pin, since its `test.sh` has not run against the current official
-patches.
+onto the official pin, since its `test.sh` has not run at the official pin.
 
 On a PR the hooks gate the merge. The nightly runs `audit.sh` only, against the release
 being built, and **fails only the builds that actually apply the patch**: a plain
