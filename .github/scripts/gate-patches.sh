@@ -60,7 +60,7 @@ run_hook() {
 
 dir_changed() {
   local path
-  while IFS= read -r path; do
+  while IFS= read -r path || [[ -n "$path" ]]; do
     [[ "$path" == "experimental-patches/$1/"* ]] && return 0
   done < "$changed_files"
   return 1
