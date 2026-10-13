@@ -52,3 +52,26 @@ detail.
   gets its own newer CMake there: the build is pinned to 3.31.10 to match the pinned vcpkg baseline,
   and that CMake has no generator for the VS the image now ships. The probe only consumes the
   installed package, so its CMake is independent of the one that built the libraries.
+
+## Each patch set is gated at the version it targets
+
+**Invariant.** The PR gate (`build.yml` `validate`, `.github/scripts/gate-patches.sh`) applies the
+official patches at `vcpkg-overlays/rocksdb/patched-version.txt`, and each experimental patch, on top
+of the official ones, at its own `patched-version.txt`. An experimental patch whose pin differs from
+the official pin is *stale*: it is gated only by a PR that changes it, and it cannot ship.
+
+**Why it has to be stated.** The two kinds of patch track different versions. The official patches
+follow upstream (the nightly applies them to whatever release `check` resolves), while an
+experimental patch stays where its author verified it. Applying today's official patches at an
+older experimental pin used to fail every official rebase for a new upstream release, blocking the
+nightly repair on a patch no nightly applies (#25). The two halves of the rule only hold together:
+not gating a stale patch is safe only because nothing can ship it, and refusing to ship it is
+reasonable only because the gate has not run its `test.sh` at the official pin, which is the version a
+build of it is closest to. A PR that changes a stale patch still runs its hooks at its own pin, so it
+can merge a fix there; shipping it still takes a rebase onto the official pin.
+
+**Where the code enforces it.** `gate-patches.sh` skips a stale patch unless the PR changes its
+directory, read from the merge commit's first parent (hence `fetch-depth: 2` in `validate`). The
+release `audit` job blocks any build that requests a stale patch. Beyond that the pins are CI
+metadata, not a release constraint: a green gate proves the patches apply at the pinned tags, not
+that they apply to every newer release the nightly builds.

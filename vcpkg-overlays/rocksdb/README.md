@@ -1,3 +1,7 @@
+The patches in `patches/` apply to every build. [`patched-version.txt`](patched-version.txt) is the
+upstream tag they were last verified against, and the PR gate applies them there; update it together
+with the patches when rebasing them for a new RocksDB release.
+
 These patches are from the vcpkg repository and licensed under the MIT license.
 
 https://github.com/toge/vcpkg/tree/master/ports/rocksdb

@@ -21,6 +21,8 @@ on:
       - "experimental-patches/**"
       - "vcpkg-overlays/rocksdb/**"
       - ".github/workflows/build.yml"
+      - ".github/scripts/apply-patches.sh"
+      - ".github/scripts/gate-patches.sh"
   schedule:
     - cron: "30 2 * * *"
   workflow_dispatch:
@@ -44,54 +46,31 @@ jobs:
     if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    # The patch hooks are PR-controlled code.
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # The PR merge commit and its parents, to list what the PR changes.
+          fetch-depth: 2
+          persist-credentials: false
 
       - name: Install audit dependency
         run: sudo apt-get update && sudo apt-get install -y ripgrep
 
-      - name: Apply and verify each experimental patch
+      - name: Apply each patch set at the version it targets
         shell: bash
         run: |
           set -euo pipefail
-          shopt -s nullglob
-
-          run_hook() {   # name, dir, hook file -- present but non-executable is an error,
-                         # never a silent skip
-            local name="$1" hook="$2" src="$3"
-            [[ -f "$hook" ]] || return 0
-            if [[ ! -x "$hook" ]]; then
-              echo "::error::$name: $(basename "$hook") is not executable; chmod +x it"
-              return 1
-            fi
-            echo "Running $(basename "$hook") for $name"
-            "$hook" "$src"
-          }
-
-          for dir in experimental-patches/*/; do
-            name="$(basename "$dir")"
-
-            # Each patch pins the release its author verified it against. Without
-            # that we do not know what to build, so there is nothing to gate on.
-            if [[ ! -f "${dir}patched-version.txt" ]]; then
-              echo "::notice::$name has no patched-version.txt; skipping build gate"
-              continue
-            fi
-            TAG="$(tr -d '[:space:]' < "${dir}patched-version.txt")"
-            SRC="rocksdb-${TAG#v}"
-
-            echo "::group::$name against $TAG"
-            rm -rf "$SRC"
-            curl -sfL -o rocksdb.tar.gz \
-              "https://github.com/facebook/rocksdb/archive/refs/tags/${TAG}.tar.gz"
-            tar -xzf rocksdb.tar.gz
-
-            .github/scripts/apply-patches.sh "$SRC" "$name"
-            run_hook "$name" "${dir}audit.sh" "$SRC"
-            run_hook "$name" "${dir}test.sh" "$SRC"
-            echo "::endgroup::"
-          done
+          if ! git rev-parse --verify --quiet HEAD^2 > /dev/null; then
+            echo "::error::expected the pull request merge commit at HEAD"
+            exit 1
+          fi
+          # --no-renames: a file moved out of a directory still changes that directory.
+          git diff --name-only --no-renames HEAD^1 HEAD > "$RUNNER_TEMP/changed-files"
+          .github/scripts/gate-patches.sh "$RUNNER_TEMP/changed-files"
 
   check:
     name: Check for new release
@@ -388,6 +367,11 @@ jobs:
             exit 1
           fi
 
+          if [[ ! -s vcpkg-overlays/rocksdb/patched-version.txt ]]; then
+            echo "::error::vcpkg-overlays/rocksdb/patched-version.txt is missing or empty"
+            exit 1
+          fi
+          OFFICIAL_PIN="$(tr -d '[:space:]' < vcpkg-overlays/rocksdb/patched-version.txt)"
           blocking=0
           for dir in experimental-patches/*/; do
             name="$(basename "$dir")"
@@ -405,23 +389,30 @@ jobs:
 
             # Distinct causes get distinct messages: "rebase it" is wrong advice for a
             # patch that applied cleanly and whose audit found an upstream change.
-            problem=""
+            problems=()
             if ! .github/scripts/apply-patches.sh "$SRC" "$name"; then
-              problem="no longer applies cleanly to RocksDB v$VERSION; rebase it"
+              problems+=("no longer applies cleanly to RocksDB v$VERSION; rebase it")
             elif [[ -f "${dir}audit.sh" && ! -x "${dir}audit.sh" ]]; then
-              problem="has a non-executable audit.sh; chmod +x it"
+              problems+=("has a non-executable audit.sh; chmod +x it")
             elif [[ -x "${dir}audit.sh" ]] && ! "${dir}audit.sh" "$SRC"; then
-              problem="applies cleanly but its audit.sh failed; upstream likely changed a site the patch must cover"
+              problems+=("applies cleanly but its audit.sh failed; upstream likely changed a site the patch must cover")
+            fi
+            # A stale patch's test.sh has not run at the official pin, so it must not ship. See .github/DESIGN.md.
+            if [[ -f "${dir}patched-version.txt" ]]; then
+              pin="$(tr -d '[:space:]' < "${dir}patched-version.txt")"
+              if [[ "$pin" != "$OFFICIAL_PIN" ]]; then
+                problems+=("is pinned to $pin while the official patches target $OFFICIAL_PIN; rebase it onto $OFFICIAL_PIN and update its patched-version.txt")
+              fi
             fi
 
-            if [[ -n "$problem" ]]; then
+            for problem in "${problems[@]}"; do
               if [[ "$in_build" -eq 1 ]]; then
                 echo "::error::$name $problem -- this build applies it, so it must not ship"
                 blocking=1
               else
                 echo "::warning::$name $problem -- not applied by this build, so it is not blocking"
               fi
-            fi
+            done
             echo "::endgroup::"
           done
 
