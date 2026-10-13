@@ -70,7 +70,7 @@ Three optional files let a patch carry its own verification, so
 |---|---|
 | `patched-version.txt` | The upstream tag (e.g. `v11.8.1`) the patch was verified against. Without it the PR gate cannot know what to build, and skips that patch. |
 | `audit.sh <src>` | Cheap check against the **already-patched** source tree. Runs on every PR *and* nightly against the release being built. |
-| `test.sh <src>` | Expensive check (building and running upstream tests). Runs on PRs only. |
+| `test.sh <src>` | Expensive check (building and running upstream tests). Runs on PRs only, and not for a stale patch (see below). |
 
 Both hooks receive the patched RocksDB source directory and should exit non-zero on
 failure, and a hook that exists but is not executable is an error rather than a
@@ -79,16 +79,11 @@ silent skip.
 On a PR, the gate applies the official patches and then this patch at this patch's
 `patched-version.txt`. The official patches declare their own target in
 [`vcpkg-overlays/rocksdb/patched-version.txt`](../vcpkg-overlays/rocksdb/patched-version.txt),
-and are gated there separately. When the two pins differ and the official patches no
-longer apply at this patch's pin, this patch is **stale**: a PR that does not touch it
-gets a warning instead of a failure, so rebasing the official patches for a new RocksDB
-release is not blocked by an opt-in patch it has moved past. A PR that changes a stale
-patch fails until it is rebased onto the official pin. If the official patches still
-apply at this patch's pin, a failure there blocks even a PR that only changed the
-official patches, because that PR broke this patch at the version it targets.
-
-A stale patch cannot ship: whenever its pin differs from the official pin, a build that
-requests it is blocked, because its `test.sh` has not run against the current official
+and are gated there separately. A patch whose pin differs from the official pin is
+**stale**. A stale patch is gated only by a PR that changes it, so rebasing the official
+patches for a new RocksDB release is never blocked by an opt-in patch it has moved past.
+A stale patch also cannot ship: a build that requests it is blocked until it is rebased
+onto the official pin, since its `test.sh` has not run against the current official
 patches.
 
 On a PR the hooks gate the merge. The nightly runs `audit.sh` only, against the release

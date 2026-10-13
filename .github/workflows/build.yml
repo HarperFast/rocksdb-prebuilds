@@ -389,29 +389,30 @@ jobs:
 
             # Distinct causes get distinct messages: "rebase it" is wrong advice for a
             # patch that applied cleanly and whose audit found an upstream change.
-            problem=""
-            pin=""
-            [[ -f "${dir}patched-version.txt" ]] && pin="$(tr -d '[:space:]' < "${dir}patched-version.txt")"
-            # The PR gate lets a stale patch merge without running its test.sh against the
-            # current official patches, so a stale patch must not ship. See .github/DESIGN.md.
-            if [[ -n "$pin" && "$pin" != "$OFFICIAL_PIN" ]]; then
-              problem="is pinned to $pin while the official patches target $OFFICIAL_PIN, so its test.sh has not run against them; rebase it onto $OFFICIAL_PIN and update its patched-version.txt"
-            elif ! .github/scripts/apply-patches.sh "$SRC" "$name"; then
-              problem="no longer applies cleanly to RocksDB v$VERSION; rebase it"
+            problems=()
+            if ! .github/scripts/apply-patches.sh "$SRC" "$name"; then
+              problems+=("no longer applies cleanly to RocksDB v$VERSION; rebase it")
             elif [[ -f "${dir}audit.sh" && ! -x "${dir}audit.sh" ]]; then
-              problem="has a non-executable audit.sh; chmod +x it"
+              problems+=("has a non-executable audit.sh; chmod +x it")
             elif [[ -x "${dir}audit.sh" ]] && ! "${dir}audit.sh" "$SRC"; then
-              problem="applies cleanly but its audit.sh failed; upstream likely changed a site the patch must cover"
+              problems+=("applies cleanly but its audit.sh failed; upstream likely changed a site the patch must cover")
+            fi
+            # The PR gate does not run a stale patch's test.sh, so it must not ship. See .github/DESIGN.md.
+            if [[ -f "${dir}patched-version.txt" ]]; then
+              pin="$(tr -d '[:space:]' < "${dir}patched-version.txt")"
+              if [[ "$pin" != "$OFFICIAL_PIN" ]]; then
+                problems+=("is pinned to $pin while the official patches target $OFFICIAL_PIN; rebase it onto $OFFICIAL_PIN and update its patched-version.txt")
+              fi
             fi
 
-            if [[ -n "$problem" ]]; then
+            for problem in "${problems[@]}"; do
               if [[ "$in_build" -eq 1 ]]; then
                 echo "::error::$name $problem -- this build applies it, so it must not ship"
                 blocking=1
               else
                 echo "::warning::$name $problem -- not applied by this build, so it is not blocking"
               fi
-            fi
+            done
             echo "::endgroup::"
           done
 

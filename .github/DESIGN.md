@@ -57,24 +57,19 @@ detail.
 
 **Invariant.** The PR gate (`build.yml` `validate`, `.github/scripts/gate-patches.sh`) applies the
 official patches at `vcpkg-overlays/rocksdb/patched-version.txt`, and each experimental patch, on top
-of the official ones, at its own `patched-version.txt`. A PR is blocked only by a patch set it
-changed, or by one whose target version its change broke.
+of the official ones, at its own `patched-version.txt`. An experimental patch whose pin differs from
+the official pin is *stale*: it is gated only by a PR that changes it, and it cannot ship.
 
 **Why it has to be stated.** The two kinds of patch track different versions. The official patches
 follow upstream (the nightly applies them to whatever release `check` resolves), while an
 experimental patch stays where its author verified it. Applying today's official patches at an
 older experimental pin used to fail every official rebase for a new upstream release, blocking the
-nightly repair on a patch no nightly applies (#25). The fix keeps one distinction:
+nightly repair on a patch no nightly applies (#25). The two halves of the rule only hold together:
+not gating a stale patch is safe only because nothing can ship it, and refusing to ship it is
+reasonable only because the gate never ran its `test.sh` against the current official patches.
 
-- the official patches *no longer apply* at an experimental pin means the experimental patch is
-  stale. That only fails a PR that changes it.
-- the official patches *still apply* there but the experimental patch or its hooks fail means this
-  PR broke it at its own version, which always fails.
-
-**Where the code enforces it.** `gate-patches.sh` reapplies the official patches alone to tell those
-two cases apart, and reads what the PR changes from the merge commit's first parent, which is why
-`validate` checks out with `fetch-depth: 2`. Letting a stale patch merge with only a warning means its
-`test.sh` never ran against the current official patches, so the release `audit` job blocks any build
-that requests a patch whose pin differs from the official pin. Beyond that one check the pins are CI
+**Where the code enforces it.** `gate-patches.sh` skips a stale patch unless the PR changes its
+directory, read from the merge commit's first parent (hence `fetch-depth: 2` in `validate`). The
+release `audit` job blocks any build that requests a stale patch. Beyond that the pins are CI
 metadata, not a release constraint: a green gate proves the patches apply at the pinned tags, not
 that they apply to every newer release the nightly builds.
