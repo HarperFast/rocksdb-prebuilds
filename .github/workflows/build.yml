@@ -44,54 +44,31 @@ jobs:
     if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    # The patch hooks are PR-controlled code.
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # The PR merge commit and its parents, to list what the PR changes.
+          fetch-depth: 2
+          persist-credentials: false
 
       - name: Install audit dependency
         run: sudo apt-get update && sudo apt-get install -y ripgrep
 
-      - name: Apply and verify each experimental patch
+      - name: Apply each patch set at the version it targets
         shell: bash
         run: |
           set -euo pipefail
-          shopt -s nullglob
-
-          run_hook() {   # name, dir, hook file -- present but non-executable is an error,
-                         # never a silent skip
-            local name="$1" hook="$2" src="$3"
-            [[ -f "$hook" ]] || return 0
-            if [[ ! -x "$hook" ]]; then
-              echo "::error::$name: $(basename "$hook") is not executable; chmod +x it"
-              return 1
-            fi
-            echo "Running $(basename "$hook") for $name"
-            "$hook" "$src"
-          }
-
-          for dir in experimental-patches/*/; do
-            name="$(basename "$dir")"
-
-            # Each patch pins the release its author verified it against. Without
-            # that we do not know what to build, so there is nothing to gate on.
-            if [[ ! -f "${dir}patched-version.txt" ]]; then
-              echo "::notice::$name has no patched-version.txt; skipping build gate"
-              continue
-            fi
-            TAG="$(tr -d '[:space:]' < "${dir}patched-version.txt")"
-            SRC="rocksdb-${TAG#v}"
-
-            echo "::group::$name against $TAG"
-            rm -rf "$SRC"
-            curl -sfL -o rocksdb.tar.gz \
-              "https://github.com/facebook/rocksdb/archive/refs/tags/${TAG}.tar.gz"
-            tar -xzf rocksdb.tar.gz
-
-            .github/scripts/apply-patches.sh "$SRC" "$name"
-            run_hook "$name" "${dir}audit.sh" "$SRC"
-            run_hook "$name" "${dir}test.sh" "$SRC"
-            echo "::endgroup::"
-          done
+          # The PR checkout is GitHub's merge commit; its first parent is the base it merged onto.
+          if ! git rev-parse --verify --quiet HEAD^2 > /dev/null; then
+            echo "::error::expected the pull request merge commit at HEAD"
+            exit 1
+          fi
+          git diff --name-only HEAD^1 HEAD > "$RUNNER_TEMP/changed-files"
+          .github/scripts/gate-patches.sh "$RUNNER_TEMP/changed-files"
 
   check:
     name: Check for new release

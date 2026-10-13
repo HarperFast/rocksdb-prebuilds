@@ -76,7 +76,18 @@ Both hooks receive the patched RocksDB source directory and should exit non-zero
 failure, and a hook that exists but is not executable is an error rather than a
 silent skip.
 
-On a PR they gate the merge. The nightly runs `audit.sh` only, against the release
+On a PR, the gate applies the official patches and then this patch at this patch's
+`patched-version.txt`. The official patches declare their own target in
+[`vcpkg-overlays/rocksdb/patched-version.txt`](../vcpkg-overlays/rocksdb/patched-version.txt),
+and are gated there separately. When the two pins differ and the official patches no
+longer apply at this patch's pin, this patch is **stale**: a PR that does not touch it
+gets a warning instead of a failure, so rebasing the official patches for a new RocksDB
+release is never blocked by an opt-in patch. A PR that changes a stale patch fails until
+it is rebased onto the official pin. If the official patches still apply at this
+patch's pin, a failure there blocks even a PR that only changed the official patches,
+because that PR broke this patch at the version it targets.
+
+On a PR the hooks gate the merge. The nightly runs `audit.sh` only, against the release
 being built, and **fails only the builds that actually apply the patch**: a plain
 nightly reports drift as a warning and still ships, while a dispatched
 `experimental_patches` build that includes a drifted patch is blocked. Both halves

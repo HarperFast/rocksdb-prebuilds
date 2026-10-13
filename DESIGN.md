@@ -4,4 +4,5 @@ Invariants the code cannot state for itself. One line per note, pointing at the 
 the code it describes.
 
 - [.github/DESIGN.md](.github/DESIGN.md) — why each release archive holds two RocksDB libraries, and
-  what keeps them configuration-identical.
+  what keeps them configuration-identical. Also why each patch set is gated at the version it
+  targets rather than one shared version.

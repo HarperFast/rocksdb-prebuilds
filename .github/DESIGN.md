@@ -52,3 +52,27 @@ detail.
   gets its own newer CMake there: the build is pinned to 3.31.10 to match the pinned vcpkg baseline,
   and that CMake has no generator for the VS the image now ships. The probe only consumes the
   installed package, so its CMake is independent of the one that built the libraries.
+
+## Each patch set is gated at the version it targets
+
+**Invariant.** The PR gate (`build.yml` `validate`, `.github/scripts/gate-patches.sh`) applies the
+official patches at `vcpkg-overlays/rocksdb/patched-version.txt`, and each experimental patch, on top
+of the official ones, at its own `patched-version.txt`. A PR is blocked only by a patch set it
+changed, or by one whose target version its change broke.
+
+**Why it has to be stated.** The two kinds of patch track different versions. The official patches
+follow upstream (the nightly applies them to whatever release `check` resolves), while an
+experimental patch stays where its author verified it. Applying today's official patches at an
+older experimental pin used to fail every official rebase for a new upstream release, blocking the
+nightly repair on a patch no nightly applies (#25). The fix keeps one distinction:
+
+- the official patches *no longer apply* at an experimental pin means the experimental patch is
+  stale. That only fails a PR that changes it.
+- the official patches *still apply* there but the experimental patch or its hooks fail means this
+  PR broke it at its own version, which always fails.
+
+**Where the code enforces it.** `gate-patches.sh` reapplies the official patches alone to tell those
+two cases apart, and reads what the PR changes from the merge commit's first parent, which is why
+`validate` checks out with `fetch-depth: 2`. The pins are CI metadata, not a release constraint: a
+green gate proves the patches apply at the pinned tags, not that they apply to every newer release
+the nightly builds.
