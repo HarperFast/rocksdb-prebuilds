@@ -1,8 +1,8 @@
 diff --git a/include/rocksdb/utilities/optimistic_transaction_db.h b/include/rocksdb/utilities/optimistic_transaction_db.h
-index eb9f973..ff8cc5d 100644
+index eb9f973..f2c3f54 100644
 --- a/include/rocksdb/utilities/optimistic_transaction_db.h
 +++ b/include/rocksdb/utilities/optimistic_transaction_db.h
-@@ -82,6 +82,14 @@ struct OptimisticTransactionDBOptions {
+@@ -82,6 +82,17 @@ struct OptimisticTransactionDBOptions {
    std::shared_ptr<OccLockBuckets> shared_lock_buckets;
  };
  
@@ -10,7 +10,10 @@ index eb9f973..ff8cc5d 100644
 +// conflicts with writes committed since it tracked each key, without committing
 +// it. Returns OK, Busy on a conflict, or TryAgain when the memtable history is too
 +// short to tell (the same cache-only check Commit() runs). Advisory: Commit()
-+// validates again, so a later writer can still make it fail.
++// validates again, so a later writer can still make it fail. Like the check in
++// a parallel-validated Commit(), it runs on the caller's thread without the DB
++// mutex, so the caller must keep every column family the transaction wrote from
++// being dropped until it returns.
 +Status CheckOptimisticTransactionForConflicts(Transaction* txn);
 +#define ROCKSDB_HAS_CHECK_OPTIMISTIC_TRANSACTION_FOR_CONFLICTS 1
 +
@@ -18,16 +21,13 @@ index eb9f973..ff8cc5d 100644
  // incompatible with `OptimisticTransactionDB` and will return a non-OK `Status`
  class OptimisticTransactionDB : public StackableDB {
 diff --git a/utilities/transactions/optimistic_transaction.cc b/utilities/transactions/optimistic_transaction.cc
-index ab4f9b5..47286ef 100644
+index ab4f9b5..d734328 100644
 --- a/utilities/transactions/optimistic_transaction.cc
 +++ b/utilities/transactions/optimistic_transaction.cc
-@@ -204,4 +204,15 @@ Status OptimisticTransaction::SetName(const TransactionName& /* unused */) {
+@@ -204,4 +204,12 @@ Status OptimisticTransaction::SetName(const TransactionName& /* unused */) {
    return Status::InvalidArgument("Optimistic transactions cannot be named.");
  }
  
-+// Runs off the write thread with no lock held, as CommitWithParallelValidate()
-+// already runs the same check; the caller keeps the transaction's column
-+// families alive.
 +Status CheckOptimisticTransactionForConflicts(Transaction* txn) {
 +  if (txn == nullptr) {
 +    return Status::InvalidArgument("null transaction");
