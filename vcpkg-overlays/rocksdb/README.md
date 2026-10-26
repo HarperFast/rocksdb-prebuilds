@@ -2,7 +2,12 @@ The patches in `patches/` apply to every build. [`patched-version.txt`](patched-
 upstream tag they were last verified against, and the PR gate applies them there; update it together
 with the patches when rebasing them for a new RocksDB release.
 
-These patches are from the vcpkg repository and licensed under the MIT license.
+`0002-optimistic-transaction-conflict-check.patch` is HarperFast's own: it exports
+`CheckOptimisticTransactionForConflicts()`, which runs an optimistic transaction's commit-time
+conflict check without committing, for rocksdb-js's check before the transaction-log write
+(HarperFast/rocksdb-js#934). It is additive and called by nothing in RocksDB itself.
+
+The other patches are from the vcpkg repository and licensed under the MIT license.
 
 https://github.com/toge/vcpkg/tree/master/ports/rocksdb
 

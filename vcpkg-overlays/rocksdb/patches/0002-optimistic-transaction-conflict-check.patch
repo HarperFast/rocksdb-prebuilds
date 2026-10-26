@@ -1,0 +1,49 @@
+diff --git a/include/rocksdb/utilities/optimistic_transaction_db.h b/include/rocksdb/utilities/optimistic_transaction_db.h
+index eb9f973..ff8cc5d 100644
+--- a/include/rocksdb/utilities/optimistic_transaction_db.h
++++ b/include/rocksdb/utilities/optimistic_transaction_db.h
+@@ -82,6 +82,14 @@ struct OptimisticTransactionDBOptions {
+   std::shared_ptr<OccLockBuckets> shared_lock_buckets;
+ };
+ 
++// Checks `txn`, which must come from an OptimisticTransactionDB, for write
++// conflicts with writes committed since it tracked each key, without committing
++// it. Returns OK, Busy on a conflict, or TryAgain when the memtable history is too
++// short to tell (the same cache-only check Commit() runs). Advisory: Commit()
++// validates again, so a later writer can still make it fail.
++Status CheckOptimisticTransactionForConflicts(Transaction* txn);
++#define ROCKSDB_HAS_CHECK_OPTIMISTIC_TRANSACTION_FOR_CONFLICTS 1
++
+ // Range deletions (including those in `WriteBatch`es passed to `Write()`) are
+ // incompatible with `OptimisticTransactionDB` and will return a non-OK `Status`
+ class OptimisticTransactionDB : public StackableDB {
+diff --git a/utilities/transactions/optimistic_transaction.cc b/utilities/transactions/optimistic_transaction.cc
+index ab4f9b5..e07800c 100644
+--- a/utilities/transactions/optimistic_transaction.cc
++++ b/utilities/transactions/optimistic_transaction.cc
+@@ -204,4 +204,11 @@ Status OptimisticTransaction::SetName(const TransactionName& /* unused */) {
+   return Status::InvalidArgument("Optimistic transactions cannot be named.");
+ }
+ 
++Status CheckOptimisticTransactionForConflicts(Transaction* txn) {
++  if (txn == nullptr) {
++    return Status::InvalidArgument("null transaction");
++  }
++  return static_cast_with_check<OptimisticTransaction>(txn)->CheckForConflicts();
++}
++
+ }  // namespace ROCKSDB_NAMESPACE
+diff --git a/utilities/transactions/optimistic_transaction.h b/utilities/transactions/optimistic_transaction.h
+index 0015517..27b65c4 100644
+--- a/utilities/transactions/optimistic_transaction.h
++++ b/utilities/transactions/optimistic_transaction.h
+@@ -47,6 +47,9 @@ class OptimisticTransaction : public TransactionBaseImpl {
+ 
+   Status SetName(const TransactionName& name) override;
+ 
++  // See CheckOptimisticTransactionForConflicts().
++  Status CheckForConflicts() { return CheckTransactionForConflicts(db_->GetRootDB()); }
++
+  protected:
+   Status TryLock(ColumnFamilyHandle* column_family, const Slice& key,
+                  bool read_only, bool exclusive, const bool do_validate = true,
