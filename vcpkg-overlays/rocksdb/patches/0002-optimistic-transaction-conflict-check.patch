@@ -18,32 +18,34 @@ index eb9f973..ff8cc5d 100644
  // incompatible with `OptimisticTransactionDB` and will return a non-OK `Status`
  class OptimisticTransactionDB : public StackableDB {
 diff --git a/utilities/transactions/optimistic_transaction.cc b/utilities/transactions/optimistic_transaction.cc
-index ab4f9b5..e07800c 100644
+index ab4f9b5..47286ef 100644
 --- a/utilities/transactions/optimistic_transaction.cc
 +++ b/utilities/transactions/optimistic_transaction.cc
-@@ -204,4 +204,11 @@ Status OptimisticTransaction::SetName(const TransactionName& /* unused */) {
+@@ -204,4 +204,15 @@ Status OptimisticTransaction::SetName(const TransactionName& /* unused */) {
    return Status::InvalidArgument("Optimistic transactions cannot be named.");
  }
  
++// Runs off the write thread with no lock held, as CommitWithParallelValidate()
++// already runs the same check; the caller keeps the transaction's column
++// families alive.
 +Status CheckOptimisticTransactionForConflicts(Transaction* txn) {
 +  if (txn == nullptr) {
 +    return Status::InvalidArgument("null transaction");
 +  }
-+  return static_cast_with_check<OptimisticTransaction>(txn)->CheckForConflicts();
++  auto otxn = static_cast_with_check<OptimisticTransaction>(txn);
++  return otxn->CheckTransactionForConflicts(otxn->db_->GetRootDB());
 +}
 +
  }  // namespace ROCKSDB_NAMESPACE
 diff --git a/utilities/transactions/optimistic_transaction.h b/utilities/transactions/optimistic_transaction.h
-index 0015517..27b65c4 100644
+index 0015517..de3252d 100644
 --- a/utilities/transactions/optimistic_transaction.h
 +++ b/utilities/transactions/optimistic_transaction.h
-@@ -47,6 +47,9 @@ class OptimisticTransaction : public TransactionBaseImpl {
+@@ -56,6 +56,7 @@ class OptimisticTransaction : public TransactionBaseImpl {
+   ROCKSDB_FIELD_UNUSED OptimisticTransactionDB* const txn_db_;
  
-   Status SetName(const TransactionName& name) override;
+   friend class OptimisticTransactionCallback;
++  friend Status CheckOptimisticTransactionForConflicts(Transaction* txn);
  
-+  // See CheckOptimisticTransactionForConflicts().
-+  Status CheckForConflicts() { return CheckTransactionForConflicts(db_->GetRootDB()); }
-+
-  protected:
-   Status TryLock(ColumnFamilyHandle* column_family, const Slice& key,
-                  bool read_only, bool exclusive, const bool do_validate = true,
+   void Initialize(const OptimisticTransactionOptions& txn_options);
+ 
