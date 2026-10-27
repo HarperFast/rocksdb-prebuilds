@@ -475,10 +475,10 @@ jobs:
     runs-on: ${{ matrix.platform.runner }}
     env:
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
-      # ECR Public mirrors Docker Hub's official images without Docker Hub's anonymous-pull token
-      # endpoint, whose timeouts failed both musl legs at once. Pinned so the musl toolchain changes
-      # only by a reviewed bump.
-      MUSL_IMAGE: public.ecr.aws/docker/library/alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+      # Pinned so the musl toolchain changes only by a reviewed bump. The digest is the same on every
+      # registry the pull step tries, so a fallback cannot change what is built.
+      MUSL_IMAGE_DIGEST: sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 # alpine 3.24.2
+      MUSL_IMAGE: rocksdb-musl-build
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -561,10 +561,17 @@ jobs:
       - name: Pull musl build image
         if: ${{ matrix.platform.target == 'linux-x64-musl' || matrix.platform.target == 'linux-arm64-musl' }}
         shell: bash
+        # Each registry has failed anonymous pulls from shared runner IPs on its own: Docker Hub's
+        # token endpoint timed out, and ECR Public returned "Data limit exceeded".
         run: |
-          for attempt in 1 2 3 4 5; do
-            docker pull "$MUSL_IMAGE" && exit 0
-            echo "docker pull failed (attempt $attempt); retrying in $((attempt * 15))s"
+          for attempt in 1 2 3; do
+            for repo in mirror.gcr.io/library/alpine public.ecr.aws/docker/library/alpine docker.io/library/alpine; do
+              if docker pull "$repo@$MUSL_IMAGE_DIGEST"; then
+                docker tag "$repo@$MUSL_IMAGE_DIGEST" "$MUSL_IMAGE"
+                exit 0
+              fi
+              echo "docker pull from $repo failed (attempt $attempt)"
+            done
             sleep $((attempt * 15))
           done
           exit 1
