@@ -1,0 +1,51 @@
+diff --git a/include/rocksdb/utilities/optimistic_transaction_db.h b/include/rocksdb/utilities/optimistic_transaction_db.h
+index eb9f973..f2c3f54 100644
+--- a/include/rocksdb/utilities/optimistic_transaction_db.h
++++ b/include/rocksdb/utilities/optimistic_transaction_db.h
+@@ -82,6 +82,17 @@ struct OptimisticTransactionDBOptions {
+   std::shared_ptr<OccLockBuckets> shared_lock_buckets;
+ };
+ 
++// Checks `txn`, which must come from an OptimisticTransactionDB, for write
++// conflicts with writes committed since it tracked each key, without committing
++// it. Returns OK, Busy on a conflict, or TryAgain when the memtable history is too
++// short to tell (the same cache-only check Commit() runs). Advisory: Commit()
++// validates again, so a later writer can still make it fail. Like the check in
++// a parallel-validated Commit(), it runs on the caller's thread without the DB
++// mutex, so the caller must keep every column family the transaction wrote from
++// being dropped until it returns.
++Status CheckOptimisticTransactionForConflicts(Transaction* txn);
++#define ROCKSDB_HAS_CHECK_OPTIMISTIC_TRANSACTION_FOR_CONFLICTS 1
++
+ // Range deletions (including those in `WriteBatch`es passed to `Write()`) are
+ // incompatible with `OptimisticTransactionDB` and will return a non-OK `Status`
+ class OptimisticTransactionDB : public StackableDB {
+diff --git a/utilities/transactions/optimistic_transaction.cc b/utilities/transactions/optimistic_transaction.cc
+index ab4f9b5..d734328 100644
+--- a/utilities/transactions/optimistic_transaction.cc
++++ b/utilities/transactions/optimistic_transaction.cc
+@@ -204,4 +204,12 @@ Status OptimisticTransaction::SetName(const TransactionName& /* unused */) {
+   return Status::InvalidArgument("Optimistic transactions cannot be named.");
+ }
+ 
++Status CheckOptimisticTransactionForConflicts(Transaction* txn) {
++  if (txn == nullptr) {
++    return Status::InvalidArgument("null transaction");
++  }
++  auto otxn = static_cast_with_check<OptimisticTransaction>(txn);
++  return otxn->CheckTransactionForConflicts(otxn->db_->GetRootDB());
++}
++
+ }  // namespace ROCKSDB_NAMESPACE
+diff --git a/utilities/transactions/optimistic_transaction.h b/utilities/transactions/optimistic_transaction.h
+index 0015517..de3252d 100644
+--- a/utilities/transactions/optimistic_transaction.h
++++ b/utilities/transactions/optimistic_transaction.h
+@@ -56,6 +56,7 @@ class OptimisticTransaction : public TransactionBaseImpl {
+   ROCKSDB_FIELD_UNUSED OptimisticTransactionDB* const txn_db_;
+ 
+   friend class OptimisticTransactionCallback;
++  friend Status CheckOptimisticTransactionForConflicts(Transaction* txn);
+ 
+   void Initialize(const OptimisticTransactionOptions& txn_options);
+ 
