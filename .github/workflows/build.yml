@@ -871,12 +871,33 @@ jobs:
               echo "Unsafe release asset name: $ASSET_NAME" >&2
               exit 1
             fi
-            curl --fail-with-body --silent --show-error \
-              --request POST \
-              -H "Authorization: Bearer $GH_TOKEN" \
-              -H "Content-Type: application/octet-stream" \
-              --data-binary "@$ASSET" \
-              "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets?name=$ASSET_NAME" >/dev/null
+            # The upload endpoint intermittently answers 404 for a release it accepted uploads to
+            # moments earlier.
+            UPLOAD_RESPONSE="$(mktemp)"
+            for attempt in 1 2 3 4 5; do
+              if curl --fail-with-body --silent --show-error \
+                --request POST \
+                -H "Authorization: Bearer $GH_TOKEN" \
+                -H "Content-Type: application/octet-stream" \
+                --data-binary "@$ASSET" \
+                -o "$UPLOAD_RESPONSE" \
+                "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets?name=$ASSET_NAME"; then
+                break
+              fi
+              echo "Uploading $ASSET_NAME failed (attempt $attempt): $(cat "$UPLOAD_RESPONSE")" >&2
+              if [[ "$attempt" -eq 5 ]]; then
+                exit 1
+              fi
+              # A failed upload can leave a partial asset under this name, which would turn every
+              # retry into a duplicate-name rejection.
+              STALE_IDS="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets?per_page=100" \
+                --jq ".[] | select(.name == \"$ASSET_NAME\") | .id")"
+              while IFS= read -r ASSET_ID; do
+                [[ -z "$ASSET_ID" ]] || gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$ASSET_ID"
+              done <<< "$STALE_IDS"
+              sleep $((attempt * 10))
+            done
+            rm -f "$UPLOAD_RESPONSE"
           done
 
           EXPECTED_ASSETS="$(mktemp)"
