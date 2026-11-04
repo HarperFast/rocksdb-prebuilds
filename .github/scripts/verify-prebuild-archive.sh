@@ -96,6 +96,9 @@ count_matches() {
   fi
 }
 
+# From 11.13 the PERF_* macros read the thread-local perf_context_fast_ptr instead of perf_context,
+# so instrumented objects reference one or the other depending on the RocksDB version. NPERF_CONTEXT
+# removes both.
 SYMBOL_REFS=0
 count_perf_context_symbol_refs() {
   local symbols rc=0
@@ -103,7 +106,7 @@ count_perf_context_symbol_refs() {
     echo "::error::nm failed on ${1##*/}; the PerfContext symbol check cannot run" >&2
     exit 1
   fi
-  SYMBOL_REFS="$(grep -cE ' U _{1,2}Z(TW|TH)?N7rocksdb12perf_contextE$' <<< "$symbols")" || rc=$?
+  SYMBOL_REFS="$(grep -cE ' U _{1,2}Z(TW|TH)?N7rocksdb(12perf_context|21perf_context_fast_ptr)E$' <<< "$symbols")" || rc=$?
   if (( rc > 1 )); then
     echo "::error::Could not scan ${1##*/} for rocksdb::perf_context references (grep exit $rc)" >&2
     exit 1
